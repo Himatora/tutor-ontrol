@@ -1,54 +1,59 @@
 from rest_framework import serializers
-from .models import *
+from .models import Teacher, LearningGoal, LearningCategory, Student, LessonType, Topic, Lesson, Homework, JournalEntry
 
 class TeacherSerializer(serializers.ModelSerializer):
     class Meta:
         model = Teacher
-        fields = '__all__'
+        fields = ['id', 'full_name', 'subject']
 
 class LearningGoalSerializer(serializers.ModelSerializer):
     class Meta:
         model = LearningGoal
-        fields = '__all__'
+        fields = ['id', 'name']
 
 class LearningCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = LearningCategory
-        fields = '__all__'
-
-class TopicSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Topic
-        fields = '__all__'
+        fields = ['id', 'name', 'slug']
 
 class StudentSerializer(serializers.ModelSerializer):
+    learning_category = LearningCategorySerializer()
+    learning_goal = LearningGoalSerializer()
+    teacher = TeacherSerializer()
+
     class Meta:
         model = Student
-        fields = '__all__'
+        fields = ['id', 'full_name', 'grade', 'learning_goal', 'teacher', 'learning_category']
 
 class LessonTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = LessonType
-        fields = '__all__'
+        fields = ['id', 'name']
+
+class TopicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Topic
+        fields = ['id', 'name']
 
 class LessonSerializer(serializers.ModelSerializer):
-    lessons_count = serializers.SerializerMethodField()
-    
+    student = StudentSerializer()
+    lesson_type = LessonTypeSerializer()
+    topic = TopicSerializer()
+
     class Meta:
         model = Lesson
-        fields = '__all__'
-    
-    def get_lessons_count(self, obj):
-        return obj.lessons_count
+        fields = ['id', 'student', 'lesson_type', 'topic', 'date', 'comment']
 
 class HomeworkSerializer(serializers.ModelSerializer):
     topics = TopicSerializer(many=True)
-    
+
     class Meta:
         model = Homework
-        fields = '__all__'
+        fields = ['id', 'lesson', 'topics', 'status', 'difficulty', 'result']
 
-class JournalSerializer(serializers.ModelSerializer):
+class JournalEntrySerializer(serializers.ModelSerializer):
+    student = StudentSerializer()
+
     class Meta:
-        model = Journal
-        fields = '__all__'
+        model = JournalEntry
+        fields = ['id', 'student', 'created_at', 'good_results', 'bad_results', 'covered_topics', 'working_on', 'recommended_lessons', 'recommendation_reason']

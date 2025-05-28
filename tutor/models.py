@@ -1,98 +1,93 @@
 from django.db import models
+from slugify import slugify
 
 class Teacher(models.Model):
-    full_name = models.CharField(max_length=200)
-    subject = models.CharField(max_length=100)
-    
+    full_name = models.CharField(max_length=100)
+    subject = models.CharField(max_length=50)
+
     def __str__(self):
-        return f"{self.full_name} ({self.subject})"
+        return self.full_name
 
 class LearningGoal(models.Model):
-    name = models.CharField(max_length=200, unique=True)
-    
+    name = models.CharField(max_length=100)
+
     def __str__(self):
         return self.name
 
 class LearningCategory(models.Model):
-    CATEGORY_CHOICES = [
-        ('EGE', 'ЕГЭ'),
-        ('OGE', 'ОГЭ'),
-        ('SCHOOL', 'Школьная программа'),
-        ('PROGRAMMING', 'Программирование'),
-    ]
-    name = models.CharField(max_length=100, choices=CATEGORY_CHOICES, unique=True)
-    
-    def __str__(self):
-        return self.get_name_display()
+    name = models.CharField(max_length=50)
+    slug = models.SlugField(max_length=100, blank=True, unique=True)
 
-class Topic(models.Model):
-    name = models.CharField(max_length=200, unique=True)
-    
+    def transliterate(self, text):
+        cyrillic_to_latin = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
+            'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+            'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
+            'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu',
+            'я': 'ya', ' ': '-', '_': '-'
+        }
+        
+        # Приводим к нижнему регистру и заменяем символы
+        result = []
+        for char in text.lower():
+            result.append(cyrillic_to_latin.get(char, char))
+        
+        # Объединяем и оставляем только разрешенные символы
+        slug_text = ''.join(result)
+        slug_text = slugify(slug_text)  # Дополнительная обработка через slugify
+        
+        return slug_text
+
+    def save(self, *args, **kwargs):
+        if not self.slug:  # Если slug не задан
+            self.slug = self.transliterate(self.name)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.name
 
 class Student(models.Model):
-    full_name = models.CharField(max_length=200)
-    learning_goal = models.ForeignKey(LearningGoal, on_delete=models.PROTECT)
-    learning_category = models.ForeignKey(LearningCategory, on_delete=models.PROTECT)
+    full_name = models.CharField(max_length=100)
     grade = models.IntegerField()
+    learning_goal = models.ForeignKey(LearningGoal, on_delete=models.CASCADE)
+    learning_category = models.ForeignKey(LearningCategory, on_delete=models.CASCADE)
     teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE)
-    
+
     def __str__(self):
         return self.full_name
 
 class LessonType(models.Model):
-    TYPE_CHOICES = [
-        ('VU', 'ВУ'),
-        ('RU', 'РУ'),
-    ]
-    name = models.CharField(max_length=50, choices=TYPE_CHOICES, unique=True)
-    
+    name = models.CharField(max_length=50)
+
     def __str__(self):
-        return self.get_name_display()
+        return self.name
+
+class Topic(models.Model):
+    name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.name
 
 class Lesson(models.Model):
-    lesson_type = models.ForeignKey(LessonType, on_delete=models.PROTECT)
-    topic = models.ForeignKey(Topic, on_delete=models.PROTECT)
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    lesson_type = models.ForeignKey(LessonType, on_delete=models.CASCADE)
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     date = models.DateTimeField(auto_now_add=True)
     comment = models.TextField(blank=True)
-    
-    @property
-    def lessons_count(self):
-        return Lesson.objects.filter(student=self.student).count()
-    
-    def __str__(self):
-        return f"{self.student} - {self.topic} ({self.date})"
 
 class Homework(models.Model):
-    DIFFICULTY_CHOICES = [
-        ('EASY', 'Легкий'),
-        ('MEDIUM', 'Средний'),
-        ('HARD', 'Сложный'),
-    ]
-    STATUS_CHOICES = [
-        ('ASSIGNED', 'Задано'),
-        ('NOT_ASSIGNED', 'Не задано'),
-    ]
-    
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE)
     topics = models.ManyToManyField(Topic)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
-    difficulty = models.CharField(max_length=20, choices=DIFFICULTY_CHOICES)
-    result = models.FloatField(null=True, blank=True)  # Процент выполнения
-    
-    def __str__(self):
-        return f"ДЗ к уроку {self.lesson}"
+    status = models.CharField(max_length=20, choices=[('ASSIGNED', 'Задано'), ('NOT_ASSIGNED', 'Не задано')])
+    difficulty = models.CharField(max_length=20, choices=[('EASY', 'Легкий'), ('MEDIUM', 'Средний'), ('HARD', 'Сложный')])
+    result = models.IntegerField(null=True, blank=True)
 
-class Journal(models.Model):
+class JournalEntry(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    goals = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    good_results = models.TextField()
+    bad_results = models.TextField()
     covered_topics = models.TextField()
     working_on = models.TextField()
     recommended_lessons = models.IntegerField()
     recommendation_reason = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    def __str__(self):
-        return f"Журнал для {self.student} от {self.created_at}"

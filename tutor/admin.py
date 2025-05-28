@@ -1,5 +1,5 @@
 from django.contrib import admin
-from tutor.models import Teacher, LearningGoal, LearningCategory, Topic, Student, LessonType, Lesson, Homework, Journal
+from tutor.models import Teacher, LearningGoal, LearningCategory, Topic, Student, LessonType, Lesson, Homework, JournalEntry
 
 @admin.register(Teacher)
 class TeacherAdmin(admin.ModelAdmin):
@@ -33,6 +33,6 @@ class LessonAdmin(admin.ModelAdmin):
 class HomeworkAdmin(admin.ModelAdmin):
     pass
 
-@admin.register(Journal)
+@admin.register(JournalEntry)
 class JournalAdmin(admin.ModelAdmin):
     pass

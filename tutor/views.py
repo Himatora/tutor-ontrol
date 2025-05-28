@@ -2,54 +2,46 @@ from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import *
 from .serializers import *
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 class TeacherViewSet(viewsets.ModelViewSet):
     queryset = Teacher.objects.all()
     serializer_class = TeacherSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    search_fields = ['full_name', 'subject']
 
 class LearningGoalViewSet(viewsets.ModelViewSet):
     queryset = LearningGoal.objects.all()
     serializer_class = LearningGoalSerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['name']
 
-class LearningCategoryViewSet(viewsets.ModelViewSet):
+
+class LearningCategoriesViewset(mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericViewSet):
     queryset = LearningCategory.objects.all()
     serializer_class = LearningCategorySerializer
-
-class TopicViewSet(viewsets.ModelViewSet):
-    queryset = Topic.objects.all()
-    serializer_class = TopicSerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['name']
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['slug']
 
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['grade', 'learning_category', 'teacher']
-    search_fields = ['full_name']
 
 class LessonTypeViewSet(viewsets.ModelViewSet):
     queryset = LessonType.objects.all()
     serializer_class = LessonTypeSerializer
 
+class TopicViewSet(viewsets.ModelViewSet):
+    queryset = Topic.objects.all()
+    serializer_class = TopicSerializer
+
 class LessonViewSet(viewsets.ModelViewSet):
     queryset = Lesson.objects.all()
     serializer_class = LessonSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['student', 'lesson_type', 'topic']
 
 class HomeworkViewSet(viewsets.ModelViewSet):
     queryset = Homework.objects.all()
     serializer_class = HomeworkSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['lesson', 'status', 'difficulty']
 
 class JournalViewSet(viewsets.ModelViewSet):
-    queryset = Journal.objects.all()
+    queryset = JournalEntry.objects.all()
     serializer_class = JournalSerializer
     
     @action(detail=False, methods=['post'])
@@ -86,7 +78,7 @@ class JournalViewSet(viewsets.ModelViewSet):
         recommendation_reason = f"Рекомендуется {recommended_lessons} занятий, так как есть темы с низким процентом выполнения: {working_on}" if problem_topics else "Рекомендуется стандартный объем занятий"
         
         # Создаем запись в журнале
-        journal = Journal.objects.create(
+        JournalEntry = JournalEntry.objects.create(
             student=student,
             goals=goals,
             covered_topics=covered_topics,
@@ -95,5 +87,5 @@ class JournalViewSet(viewsets.ModelViewSet):
             recommendation_reason=recommendation_reason
         )
         
-        serializer = self.get_serializer(journal)
+        serializer = self.get_serializer(JournalEntry)
         return Response(serializer.data)
