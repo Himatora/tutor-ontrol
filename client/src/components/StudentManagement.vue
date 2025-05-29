@@ -105,7 +105,7 @@
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Преподаватель *</label>
-                  <select v-model="studentForm.teacher" class="form-select" required disabled>
+                  <select v-model="studentForm.teacher" class="form-select" required>
                     <option v-for="teacher in teachers" :value="teacher.id">{{ teacher.full_name }} ({{ teacher.subject }})</option>
                   </select>
                 </div>
@@ -188,21 +188,15 @@ import { useRouter } from 'vue-router';
 import axios from 'axios';
 import { Modal } from 'bootstrap';
 
+// Устанавливаем базовый URL
+axios.defaults.baseURL = 'http://localhost:8000';
+
 export default {
   name: 'StudentManagement',
   props: {
-    categorySlug: {
-      type: String,
-      required: true,
-    },
-    categoryId: {
-      type: Number,
-      required: true,
-    },
-    categoryName: {
-      type: String,
-      required: true,
-    },
+    categorySlug: { type: String, required: true },
+    categoryId: { type: Number, required: true },
+    categoryName: { type: String, required: true },
   },
   setup(props) {
     const router = useRouter();
@@ -237,30 +231,15 @@ export default {
       try {
         console.log('Fetching data for category ID:', props.categoryId);
 
-        let studentsRes, goalsRes, teachersRes;
-        try {
-          studentsRes = await axios.get(`/api/students/?learning_category=${encodeURIComponent(props.categoryId)}`);
-          console.log('API /students response:', studentsRes.data);
-        } catch (err) {
-          console.error('Error fetching students:', err.response ? err.response.data : err.message);
-          studentsRes = { data: [] };
-        }
+        const [studentsRes, goalsRes, teachersRes] = await Promise.all([
+          axios.get(`/api/students/?learning_category=${encodeURIComponent(props.categoryId)}`),
+          axios.get('/api/learning-goals/'),
+          axios.get('/api/teachers/'),
+        ]);
 
-        try {
-          goalsRes = await axios.get('/api/learning-goals/');
-          console.log('API /learning-goals response:', goalsRes.data);
-        } catch (err) {
-          console.error('Error fetching goals:', err.response ? err.response.data : err.message);
-          goalsRes = { data: [] };
-        }
-
-        try {
-          teachersRes = await axios.get('/api/teachers/');
-          console.log('API /teachers response:', teachersRes.data);
-        } catch (err) {
-          console.error('Error fetching teachers:', err.response ? err.response.data : err.message);
-          teachersRes = { data: [] };
-        }
+        console.log('API /students response:', studentsRes.data);
+        console.log('API /learning-goals response:', goalsRes.data);
+        console.log('API /teachers response:', teachersRes.data);
 
         students.value = studentsRes.data;
         goals.value = goalsRes.data;
@@ -273,7 +252,7 @@ export default {
           error.value = 'Нет учеников для этой категории. Добавьте нового ученика.';
         }
       } catch (err) {
-        console.error('General data loading error:', err);
+        console.error('General data loading error:', err.response?.data || err.message);
         error.value = 'Не удалось загрузить данные. Попробуйте позже.';
       } finally {
         isLoading.value = false;
@@ -300,12 +279,14 @@ export default {
     const addGoal = async () => {
       if (!newGoalName.value) return;
       try {
-        await axios.post('/api/learning-goals/', { name: newGoalName.value });
+        await axios.post('/api/learning-goals/', { name: newGoalName.value }, {
+          headers: { 'Content-Type': 'application/json' },
+        });
         await loadData();
         goalModal.hide();
         studentModal.show();
       } catch (error) {
-        console.error('Ошибка добавления цели:', error);
+        console.error('Ошибка добавления цели:', error.response?.data || error.message);
       }
     };
 
@@ -313,30 +294,41 @@ export default {
       try {
         const data = {
           full_name: studentForm.value.full_name,
-          grade: studentForm.value.grade,
-          learning_goal: studentForm.value.learning_goal,
-          learning_category: studentForm.value.learning_category,
-          teacher: studentForm.value.teacher,
+          grade: Number(studentForm.value.grade),
+          learning_goal_id: Number(studentForm.value.learning_goal),
+          learning_category_id: Number(studentForm.value.learning_category),
+          teacher_id: Number(studentForm.value.teacher),
         };
+        console.log('Отправляемые данные:', data);
+
+        const config = {
+          headers: { 'Content-Type': 'application/json' },
+        };
+
         if (editingStudent.value) {
-          await axios.put(`/api/students/${editingStudent.value.id}/`, data);
+          console.log('PUT запрос на:', `/api/students/${editingStudent.value.id}/`);
+          await axios.put(`/api/students/${editingStudent.value.id}/`, data, config);
         } else {
-          await axios.post('/api/students/', data);
+          console.log('POST запрос на:', '/api/students/');
+          await axios.post('/api/students/', data, config);
         }
         await loadData();
         studentModal.hide();
       } catch (error) {
-        console.error('Ошибка сохранения ученика:', error);
+        console.error('Ошибка сохранения ученика:', JSON.stringify(error.response?.data, null, 2));
+        error.value = 'Не удалось сохранить ученика: ' + (error.response?.data?.detail || error.message);
       }
     };
 
     const deleteStudent = async () => {
       try {
-        await axios.delete(`/api/students/${studentToDelete.value}/`);
+        await axios.delete(`/api/students/${studentToDelete.value}/`, {
+          headers: { 'Content-Type': 'application/json' },
+        });
         await loadData();
         deleteModal.hide();
       } catch (error) {
-        console.error('Ошибка удаления ученика:', error);
+        console.error('Ошибка удаления ученика:', error.response?.data || error.message);
       }
     };
 

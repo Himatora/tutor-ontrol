@@ -45,7 +45,7 @@ class LearningCategory(models.Model):
 
     def __str__(self):
         return self.name
-
+        
 class Student(models.Model):
     full_name = models.CharField(max_length=100)
     grade = models.IntegerField()
@@ -73,7 +73,7 @@ class Lesson(models.Model):
     lesson_type = models.ForeignKey(LessonType, on_delete=models.CASCADE)
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     date = models.DateTimeField(auto_now_add=True)
-    comment = models.TextField(blank=True)
+    comment = models.TextField(null=True)
 
 class Homework(models.Model):
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE)

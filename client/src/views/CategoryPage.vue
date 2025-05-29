@@ -1,6 +1,7 @@
 <template>
   <div>
     <h1 v-if="category" class="mb-4 text-primary">{{ category.name }} - Управление учениками</h1>
+    <h1 v-else-if="error" class="mb-4 text-danger">{{ error }}</h1>
     <h1 v-else class="mb-4 text-primary">Загрузка...</h1>
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
       <div class="container-fluid">
@@ -18,7 +19,7 @@
       </div>
     </nav>
     <StudentManagement v-if="category" :category-slug="$route.params.category" :category-id="category.id" :category-name="category.name" />
-    <div v-else class="text-center">
+    <div v-else-if="!error" class="text-center">
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Загрузка...</span>
       </div>
@@ -30,12 +31,15 @@
 import axios from 'axios';
 import StudentManagement from '../components/StudentManagement.vue';
 
+axios.defaults.baseURL = 'http://localhost:8000';
+
 export default {
   name: 'CategoryPage',
   components: { StudentManagement },
   data() {
     return {
       category: null,
+      error: null,
     };
   },
   async mounted() {
@@ -46,16 +50,19 @@ export default {
       try {
         const slug = this.$route.params.category;
         console.log('Запрос категории с slug:', slug);
-        const response = await axios.get(`/api/learning-categories/?slug=${slug}`);
-        console.log('Ответ API:', response.data);
-        if (response.data.id) {
-          this.category = response.data;
+        const response = await axios.get(`/api/learning-categories/?slug=${encodeURIComponent(slug)}`);
+        console.log('Полный ответ API:', JSON.stringify(response.data, null, 2));
+        if (response.data.length > 0 && response.data[0].id) {
+          this.category = response.data[0];
+          console.log('Категория найдена:', this.category);
         } else {
           console.error('Категория не найдена для slug:', slug);
+          this.error = `Категория "${slug}" не найдена.`;
           this.$router.push('/');
         }
       } catch (error) {
-        console.error('Ошибка при загрузке категории:', error);
+        console.error('Ошибка при загрузке категории:', error.response?.data || error.message);
+        this.error = 'Не удалось загрузить категорию: ' + (error.response?.data?.detail || error.message);
         this.$router.push('/');
       }
     },
