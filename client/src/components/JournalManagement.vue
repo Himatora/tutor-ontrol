@@ -30,8 +30,7 @@
         <h3>Запись от {{ formatDate(entry.created_at) }}</h3>
         <div class="section">
           <h4>Результаты:</h4>
-          <p><strong>Хорошие:</strong> {{ entry.good_results }}</p>
-          <p><strong>Проблемные:</strong> {{ entry.bad_results }}</p>
+          <p>{{ entry.good_results }}</p>
         </div>
         <div class="section">
           <h4>Пройденные темы:</h4>
@@ -43,7 +42,6 @@
         </div>
         <div class="section">
           <h4>Рекомендуемый объем занятий:</h4>
-          <p>{{ entry.recommended_lessons }} занятий</p>
           <p>{{ entry.recommendation_reason }}</p>
         </div>
       </div>

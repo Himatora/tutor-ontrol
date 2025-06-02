@@ -14,6 +14,7 @@ from tutor.views import (
     LessonViewSet,  
     HomeworkViewSet,  
     JournalViewSet,  
+    HomeworkResultViewSet,
 )
 
 router = DefaultRouter()
@@ -25,6 +26,7 @@ router.register(r'lesson-types', LessonTypeViewSet)
 router.register(r'topics', TopicViewSet)
 router.register(r'lessons', LessonViewSet)
 router.register(r'homework', HomeworkViewSet)
+router.register(r'homework-results', HomeworkResultViewSet)
 router.register(r'journal', JournalViewSet)
 
 urlpatterns = [

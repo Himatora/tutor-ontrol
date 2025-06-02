@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Teacher, LearningGoal, LearningCategory, Student, LessonType, Topic, Lesson, Homework, JournalEntry
+from .models import *
 
 class TeacherSerializer(serializers.ModelSerializer):
     class Meta:
@@ -72,16 +72,24 @@ class LessonSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lesson
         fields = ['id', 'student', 'student_id', 'lesson_type', 'lesson_type_id', 'topic', 'topic_id', 'date', 'comment']
+        
+class HomeworkResultSerializer(serializers.ModelSerializer):
+    topic_id = serializers.PrimaryKeyRelatedField(queryset=Topic.objects.all(), source='topic')
+
+    class Meta:
+        model = HomeworkResult
+        fields = ['id', 'topic_id', 'difficulty', 'correct_count', 'total_count', 'percentage']
 
 class HomeworkSerializer(serializers.ModelSerializer):
-    topics = TopicSerializer(many=True, read_only=True)
-    topic_ids = serializers.PrimaryKeyRelatedField(
-        queryset=Topic.objects.all(), source='topics', many=True, write_only=True
-    )
+    lesson_id = serializers.PrimaryKeyRelatedField(queryset=Lesson.objects.all(), source='lesson')
+    topic_ids = serializers.PrimaryKeyRelatedField(queryset=Topic.objects.all(), many=True, source='topics')
+    results = HomeworkResultSerializer(many=True, read_only=True)
 
     class Meta:
         model = Homework
-        fields = ['id', 'lesson', 'topics', 'topic_ids', 'status', 'difficulty', 'result']
+        fields = ['id', 'lesson_id', 'topic_ids', 'status', 'created_at', 'results']
+        
+
 
 class JournalEntrySerializer(serializers.ModelSerializer):
     student = StudentSerializer(read_only=True)

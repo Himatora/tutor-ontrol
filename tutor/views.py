@@ -1,4 +1,4 @@
-from rest_framework import viewsets, filters, mixins
+from rest_framework import viewsets, filters, mixins, status
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -80,12 +80,39 @@ class LessonViewSet(viewsets.ModelViewSet):
 class HomeworkViewSet(viewsets.ModelViewSet):
     queryset = Homework.objects.all()
     serializer_class = HomeworkSerializer
-    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        homework = serializer.save()  # Сохраняем объект Homework через сериализатор
+
+        # Создаем результаты для каждой темы и уровня сложности
+        results = request.data.get('results', [])
+        for result in results:
+            HomeworkResult.objects.create(
+                homework=homework,
+                topic_id=result['topic_id'],
+                difficulty=result['difficulty'],
+                correct_count=result.get('correct_count', 0),
+                total_count=result.get('total_count', 0)
+            )
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'])
+    def results(self, request, pk=None):
+        homework = self.get_object()
+        results = homework.results.all()
+        serializer = HomeworkResultSerializer(results, many=True)
+        return Response(serializer.data)
+
+class HomeworkResultViewSet(viewsets.ModelViewSet):
+    queryset = HomeworkResult.objects.all()
+    serializer_class = HomeworkResultSerializer
 
 class JournalViewSet(viewsets.ModelViewSet):
     queryset = JournalEntry.objects.all()
     serializer_class = JournalEntrySerializer
-    permission_classes = [AllowAny]
 
     @action(detail=False, methods=['post'])
     def generate(self, request):
@@ -93,49 +120,88 @@ class JournalViewSet(viewsets.ModelViewSet):
         lessons_count = int(request.data.get('lessons_count', 5))
 
         try:
-            student = Student.objects.get(pk=student_id)
+            student = Student.objects.get(id=student_id)
         except Student.DoesNotExist:
-            logger.error(f"Студент с ID {student_id} не найден")
-            return Response({"error": "Student not found"}, status=404)
+            return Response({"detail": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        # Получаем последние уроки для студента
         lessons = Lesson.objects.filter(student=student).order_by('-date')[:lessons_count]
-        covered_topics = ", ".join(set(lesson.topic.name for lesson in lessons)) if lessons else "Нет данных"
+        if not lessons:
+            return Response({"detail": "No lessons found for this student"}, status=status.HTTP_400_BAD_REQUEST)
 
-        good_results = []
-        bad_results = []
-        problem_topics = []
+        # Собираем данные для журнала
+        good_results_list = []
+        bad_results_list = []
+        covered_topics = []
+        bad_topics = []
+
         for lesson in lessons:
-            try:
-                homework = Homework.objects.get(lesson=lesson)
-                if homework.result is not None:
-                    if homework.result >= 50:
-                        good_results.append(f"Тема '{lesson.topic.name}': {homework.result}%")
+            homeworks = Homework.objects.filter(lesson=lesson)
+            for homework in homeworks:
+                results = HomeworkResult.objects.filter(homework=homework)
+                for result in results:
+                    topic_entry = f"{result.topic.name} {result.difficulty.lower()} уровня"
+                    topic_data = {
+                        "topic_id": result.topic.id,
+                        "topic_name": result.topic.name,
+                        "difficulty": result.difficulty,
+                        "percentage": result.percentage
+                    }
+                    covered_topics.append(topic_data)
+                    if result.percentage == 100:
+                        good_results_list.append(topic_entry)
                     else:
-                        bad_results.append(f"Тема '{lesson.topic.name}': {homework.result}%")
-                        problem_topics.append(lesson.topic.name)
-            except Homework.DoesNotExist:
-                continue
+                        bad_results_list.append(topic_entry)
+                        bad_topics.append(topic_entry)
 
-        good_results_str = "; ".join(good_results) if good_results else "Нет данных"
-        bad_results_str = "; ".join(bad_results) if bad_results else "Нет данных"
-        working_on = ", ".join(set(problem_topics)) if problem_topics else "Нет данных"
-        recommended_lessons = 5 if len(problem_topics) >= 3 else 3
-        recommendation_reason = (
-            f"Рекомендуется {recommended_lessons} занятий, так как есть темы с низким процентом выполнения: {working_on}"
-            if problem_topics
-            else "Рекомендуется стандартный объем занятий"
+        # Формируем первый блок: Хорошие и плохие результаты
+        if good_results_list and bad_results_list:
+            good_results = (
+                f"У ученика такая оценка, т.к. в ходе обучения он хорошо освоил следующие темы: "
+                f"{', '.join(good_results_list)}. "
+                f"Но при этом ещё плохо понимает следующие темы: {', '.join(bad_results_list)}."
+            )
+        elif good_results_list:
+            good_results = (
+                f"У ученика такая оценка, т.к. в ходе обучения он хорошо освоил следующие темы: "
+                f"{', '.join(good_results_list)}."
+            )
+        elif bad_results_list:
+            good_results = (
+                f"У ученика такая оценка, т.к. в ходе обучения он плохо освоил следующие темы: "
+                f"{', '.join(bad_results_list)}."
+            )
+        else:
+            good_results = "У ученика нет результатов по домашним заданиям."
+
+        # Формируем второй блок: Пройденные темы
+        covered_topics_names = [f"{t['topic_name']} {t['difficulty'].lower()} уровня" for t in covered_topics]
+        covered_topics_text = (
+            f"В ходе занятий были пройдены следующие темы: {', '.join(covered_topics_names)}."
+            if covered_topics_names else "В ходе занятий темы не были пройдены."
         )
 
+        # Формируем третий блок: Работаем над и рекомендации
+        working_on = (
+            f"Мы продолжаем работать над: {', '.join(bad_topics)}." if bad_topics
+            else "Все темы освоены на 100%."
+        )
+        recommended_lessons = max(1, len(bad_topics))  # Минимум 1 урок, больше при проблемах
+        recommendation_reason = (
+            f"Я советую такой объем занятий, т.к. ученик ещё не освоил {', '.join(bad_topics)}."
+            if bad_topics else "Я советую такой объем занятий для поддержания текущего уровня знаний."
+        )
+
+        # Создаем запись в журнале
         journal_entry = JournalEntry.objects.create(
             student=student,
-            good_results=good_results_str,
-            bad_results=bad_results_str,
-            covered_topics=covered_topics,
+            good_results=good_results,
+            bad_results=covered_topics_text,  # Используем bad_results для хранения списка всех тем
+            covered_topics=covered_topics_text,  # JSONField с детальными данными
             working_on=working_on,
             recommended_lessons=recommended_lessons,
             recommendation_reason=recommendation_reason
         )
 
-        serializer = self.get_serializer(journal_entry)
-        logger.info(f"Создана запись в журнале: {serializer.data}")
-        return Response(serializer.data, status=201)
+        serializer = JournalEntrySerializer(journal_entry)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

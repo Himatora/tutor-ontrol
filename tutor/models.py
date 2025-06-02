@@ -76,18 +76,41 @@ class Lesson(models.Model):
     comment = models.TextField(null=True)
 
 class Homework(models.Model):
-    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE)
-    topics = models.ManyToManyField(Topic)
+    lesson = models.ForeignKey('Lesson', on_delete=models.CASCADE)
+    topics = models.ManyToManyField('Topic')
     status = models.CharField(max_length=20, choices=[('ASSIGNED', 'Задано'), ('NOT_ASSIGNED', 'Не задано')])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"ДЗ для урока {self.lesson.id}"
+
+class HomeworkResult(models.Model):
+    homework = models.ForeignKey(Homework, on_delete=models.CASCADE, related_name='results')
+    topic = models.ForeignKey('Topic', on_delete=models.CASCADE)
     difficulty = models.CharField(max_length=20, choices=[('EASY', 'Легкий'), ('MEDIUM', 'Средний'), ('HARD', 'Сложный')])
-    result = models.IntegerField(null=True, blank=True)
+    correct_count = models.IntegerField(default=0)
+    total_count = models.IntegerField(default=0)
+    percentage = models.FloatField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        if self.total_count > 0:
+            self.percentage = (self.correct_count / self.total_count) * 100
+        else:
+            self.percentage = 0
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.topic.name} ({self.difficulty}): {self.percentage}%"
 
 class JournalEntry(models.Model):
-    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    student = models.ForeignKey('Student', on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     good_results = models.TextField()
     bad_results = models.TextField()
-    covered_topics = models.TextField()
+    covered_topics = models.JSONField(default=dict)  # Храним результаты по темам в JSON
     working_on = models.TextField()
     recommended_lessons = models.IntegerField()
     recommendation_reason = models.TextField()
+
+    def __str__(self):
+        return f"Запись для {self.student.full_name} от {self.created_at}"
