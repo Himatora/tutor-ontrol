@@ -26,10 +26,12 @@ class LearningGoalViewSet(viewsets.ModelViewSet):
     queryset = LearningGoal.objects.all()
     serializer_class = LearningGoalSerializer
     permission_classes = [AllowAny]
-
-    def create(self, request, *args, **kwargs):
-        logger.info(f"Создание цели обучения: {request.data}")
-        return super().create(request, *args, **kwargs)
+    
+    def get_queryset(self):
+        category_id = self.request.query_params.get('category')
+        if category_id:
+            return self.queryset.filter(categories__id=category_id)
+        return self.queryset
 
 class LearningCategoriesViewSet(mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     queryset = LearningCategory.objects.all()
@@ -114,13 +116,6 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
     serializer_class = HomeworkResultSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['homework__lesson']
-
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from django.db.models import Max
-from .models import JournalEntry, Student, Lesson, Homework, HomeworkResult, Topic
-from .serializers import JournalEntrySerializer
 
 class JournalViewSet(viewsets.ModelViewSet):
     queryset = JournalEntry.objects.all()

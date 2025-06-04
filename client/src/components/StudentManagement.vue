@@ -20,8 +20,9 @@
             </select>
           </div>
           <div class="col-md-3">
-            <select v-model="categoryFilter" class="form-select" disabled>
-              <option :value="categoryId">{{ categoryName }}</option>
+            <select v-model="categoryFilter" class="form-select">
+              <option value="">Все категории</option>
+              <option v-for="category in categories" :value="category.id">{{ category.name }}</option>
             </select>
           </div>
           <div class="col-md-2">
@@ -105,33 +106,39 @@
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Преподаватель *</label>
-                  <select v-model="studentForm.teacher" class="form-select" required>
+                  <select v-model="studentForm.teacher_id" class="form-select" required>
+                    <option value="">Выберите преподавателя</option>
                     <option v-for="teacher in teachers" :value="teacher.id">{{ teacher.full_name }} ({{ teacher.subject }})</option>
                   </select>
                 </div>
               </div>
               <div class="row mb-3">
                 <div class="col-md-6">
+                  <label class="form-label">Категория *</label>
+                  <select v-model="studentForm.learning_category_id" class="form-select" required @change="fetchGoals">
+                    <option value="">Выберите категорию</option>
+                    <option v-for="category in categories" :value="category.id">{{ category.name }}</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
                   <label class="form-label">Цель обучения *</label>
                   <div class="input-group">
-                    <select v-model="studentForm.learning_goal" class="form-select" required>
-                      <option v-for="goal in goals" :value="goal.id">{{ goal.name }}</option>
+                    <select v-model="studentForm.learning_goal_id" class="form-select" required :disabled="!studentForm.learning_category_id">
+                      <option value="">Выберите цель</option>
+                      <option v-for="goal in filteredGoals" :value="goal.id">{{ goal.name }}</option>
                     </select>
-                    <button @click="showGoalModal" type="button" class="btn btn-outline-secondary">
+                    <button @click="showGoalModal" type="button" class="btn btn-outline-secondary" :disabled="!studentForm.learning_category_id">
                       <i class="bi bi-plus"></i>
                     </button>
                   </div>
                 </div>
-                <div class="col-md-6">
-                  <label class="form-label">Категория *</label>
-                  <select v-model="studentForm.learning_category" class="form-select" required disabled>
-                    <option :value="categoryId">{{ categoryName }}</option>
-                  </select>
-                </div>
+              </div>
+              <div v-if="formError" class="alert alert-danger">
+                {{ formError }}
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="submit" class="btn btn-primary">{{ editingStudent ? 'Сохранить' : 'Добавить' }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="!isFormValid">{{ editingStudent ? 'Сохранить' : 'Добавить' }}</button>
               </div>
             </form>
           </div>
@@ -150,7 +157,7 @@
           <div class="modal-body">
             <div class="mb-3">
               <label class="form-label">Название *</label>
-              <input v-model="newGoalName" type="text" class="form-control" placeholder="Например: Подготовка к ОГЭ" required />
+              <input v-model="newGoalName" type="text" class="form-control" placeholder="Например: Подготовка к ЕГЭ" required />
             </div>
           </div>
           <div class="modal-footer">
@@ -202,10 +209,11 @@ export default {
     const router = useRouter();
     const students = ref([]);
     const goals = ref([]);
+    const categories = ref([]);
     const teachers = ref([]);
     const searchQuery = ref('');
     const gradeFilter = ref('');
-    const categoryFilter = ref(props.categoryId);
+    const categoryFilter = ref('');
     const sortField = ref('full_name');
     const sortDirection = ref('asc');
     const newGoalName = ref('');
@@ -213,17 +221,35 @@ export default {
     const studentToDelete = ref(null);
     const isLoading = ref(true);
     const error = ref(null);
+    const formError = ref(null);
     const studentForm = ref({
       full_name: '',
       grade: 5,
-      learning_goal: null,
-      learning_category: props.categoryId,
-      teacher: null,
+      learning_category_id: props.categoryId,
+      learning_goal_id: null,
+      teacher_id: null,
     });
 
     let studentModal = null;
     let goalModal = null;
     let deleteModal = null;
+
+    const filteredGoals = computed(() => {
+      if (!studentForm.value.learning_category_id) return [];
+      return goals.value.filter(goal =>
+        goal.categories.some(category => category.id === studentForm.value.learning_category_id)
+      );
+    });
+
+    const isFormValid = computed(() => {
+      return (
+        studentForm.value.full_name &&
+        studentForm.value.grade &&
+        studentForm.value.learning_category_id &&
+        studentForm.value.learning_goal_id &&
+        studentForm.value.teacher_id
+      );
+    });
 
     const loadData = async () => {
       isLoading.value = true;
@@ -231,22 +257,21 @@ export default {
       try {
         console.log('Fetching data for category ID:', props.categoryId);
 
-        const [studentsRes, goalsRes, teachersRes] = await Promise.all([
+        const [studentsRes, categoriesRes, teachersRes] = await Promise.all([
           axios.get(`/api/students/?learning_category=${encodeURIComponent(props.categoryId)}`),
-          axios.get('/api/learning-goals/'),
+          axios.get('/api/learning-categories/'),
           axios.get('/api/teachers/'),
         ]);
 
         console.log('API /students response:', studentsRes.data);
-        console.log('API /learning-goals response:', goalsRes.data);
+        console.log('API /learning-categories response:', categoriesRes.data);
         console.log('API /teachers response:', teachersRes.data);
 
         students.value = studentsRes.data;
-        goals.value = goalsRes.data;
+        categories.value = categoriesRes.data;
         teachers.value = teachersRes.data;
 
-        if (goals.value.length > 0) studentForm.value.learning_goal = goals.value[0].id;
-        if (teachers.value.length > 0) studentForm.value.teacher = teachers.value[0].id;
+        await fetchGoals();
 
         if (students.value.length === 0) {
           error.value = 'Нет учеников для этой категории. Добавьте нового ученика.';
@@ -256,6 +281,23 @@ export default {
         error.value = 'Не удалось загрузить данные. Попробуйте позже.';
       } finally {
         isLoading.value = false;
+      }
+    };
+
+    const fetchGoals = async () => {
+      try {
+        console.log('Fetching goals for category:', studentForm.value.learning_category_id);
+        const response = await axios.get('/api/learning-goals/', {
+          params: { category: studentForm.value.learning_category_id },
+        });
+        goals.value = response.data;
+        console.log('Goals fetched:', goals.value);
+        if (!filteredGoals.value.some(goal => goal.id === studentForm.value.learning_goal_id)) {
+          studentForm.value.learning_goal_id = filteredGoals.value.length > 0 ? filteredGoals.value[0].id : null;
+        }
+      } catch (err) {
+        console.error('Error fetching goals:', err.response?.data || err.message);
+        formError.value = 'Не удалось загрузить цели.';
       }
     };
 
@@ -279,25 +321,31 @@ export default {
     const addGoal = async () => {
       if (!newGoalName.value) return;
       try {
-        await axios.post('/api/learning-goals/', { name: newGoalName.value }, {
+        const data = {
+          name: newGoalName.value,
+          category_ids: [studentForm.value.learning_category_id],
+        };
+        await axios.post('/api/learning-goals/', data, {
           headers: { 'Content-Type': 'application/json' },
         });
-        await loadData();
+        await fetchGoals();
         goalModal.hide();
         studentModal.show();
-      } catch (error) {
-        console.error('Ошибка добавления цели:', error.response?.data || error.message);
+      } catch (err) {
+        console.error('Ошибка добавления цели:', err.response?.data || err.message);
+        formError.value = 'Не удалось добавить цель.';
       }
     };
 
     const saveStudent = async () => {
+      formError.value = null;
       try {
         const data = {
           full_name: studentForm.value.full_name,
           grade: Number(studentForm.value.grade),
-          learning_goal_id: Number(studentForm.value.learning_goal),
-          learning_category_id: Number(studentForm.value.learning_category),
-          teacher_id: Number(studentForm.value.teacher),
+          learning_category_id: Number(studentForm.value.learning_category_id),
+          learning_goal_id: Number(studentForm.value.learning_goal_id),
+          teacher_id: Number(studentForm.value.teacher_id),
         };
         console.log('Отправляемые данные:', data);
 
@@ -314,9 +362,9 @@ export default {
         }
         await loadData();
         studentModal.hide();
-      } catch (error) {
-        console.error('Ошибка сохранения ученика:', JSON.stringify(error.response?.data, null, 2));
-        error.value = 'Не удалось сохранить ученика: ' + (error.response?.data?.detail || error.message);
+      } catch (err) {
+        console.error('Ошибка сохранения ученика:', JSON.stringify(err.response?.data, null, 2));
+        formError.value = 'Не удалось сохранить ученика: ' + (err.response?.data?.non_field_errors || JSON.stringify(err.response?.data));
       }
     };
 
@@ -327,20 +375,22 @@ export default {
         });
         await loadData();
         deleteModal.hide();
-      } catch (error) {
-        console.error('Ошибка удаления ученика:', error.response?.data || error.message);
+      } catch (err) {
+        console.error('Ошибка удаления ученика:', err.response?.data || err.message);
+        error.value = 'Не удалось удалить ученика.';
       }
     };
 
-    const editStudent = (student) => {
+    const editStudent = async (student) => {
       editingStudent.value = student;
       studentForm.value = {
         full_name: student.full_name,
         grade: student.grade,
-        learning_goal: student.learning_goal.id,
-        learning_category: student.learning_category.id,
-        teacher: student.teacher.id,
+        learning_category_id: student.learning_category.id,
+        learning_goal_id: student.learning_goal.id,
+        teacher_id: student.teacher.id,
       };
+      await fetchGoals();
       studentModal.show();
     };
 
@@ -352,16 +402,17 @@ export default {
       studentForm.value = {
         full_name: '',
         grade: 5,
-        learning_goal: goals.value.length > 0 ? goals.value[0].id : null,
-        learning_category: props.categoryId,
-        teacher: teachers.value.length > 0 ? teachers.value[0].id : null,
+        learning_category_id: props.categoryId,
+        learning_goal_id: filteredGoals.value.length > 0 ? filteredGoals.value[0].id : null,
+        teacher_id: teachers.value.length > 0 ? teachers.value[0].id : null,
       };
+      fetchGoals();
     };
 
     const resetFilters = () => {
       searchQuery.value = '';
       gradeFilter.value = '';
-      categoryFilter.value = props.categoryId;
+      categoryFilter.value = '';
     };
 
     const sortBy = (field) => {
@@ -375,7 +426,6 @@ export default {
 
     const filteredStudents = computed(() => {
       let result = students.value;
-      console.log('Raw students data:', result);
 
       if (searchQuery.value) {
         const query = searchQuery.value.toLowerCase();
@@ -384,6 +434,10 @@ export default {
 
       if (gradeFilter.value) {
         result = result.filter((s) => s.grade === Number(gradeFilter.value));
+      }
+
+      if (categoryFilter.value) {
+        result = result.filter((s) => s.learning_category.id === Number(categoryFilter.value));
       }
 
       result = result.sort((a, b) => {
@@ -395,7 +449,6 @@ export default {
         return 0;
       });
 
-      console.log('Filtered students:', result);
       return result;
     });
 
@@ -412,6 +465,7 @@ export default {
     return {
       students,
       goals,
+      categories,
       teachers,
       searchQuery,
       gradeFilter,
@@ -420,9 +474,11 @@ export default {
       editingStudent,
       studentForm,
       filteredStudents,
-      categoryId: props.categoryId,
+      filteredGoals,
+      isFormValid,
       isLoading,
       error,
+      formError,
       showAddModal,
       showGoalModal,
       confirmDelete,
@@ -433,6 +489,7 @@ export default {
       goToLessons,
       resetFilters,
       sortBy,
+      fetchGoals,
     };
   },
 };

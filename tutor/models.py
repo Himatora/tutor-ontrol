@@ -8,11 +8,7 @@ class Teacher(models.Model):
     def __str__(self):
         return self.full_name
 
-class LearningGoal(models.Model):
-    name = models.CharField(max_length=100)
 
-    def __str__(self):
-        return self.name
 
 class LearningCategory(models.Model):
     name = models.CharField(max_length=50)
@@ -45,7 +41,13 @@ class LearningCategory(models.Model):
 
     def __str__(self):
         return self.name
-        
+
+class LearningGoal(models.Model):
+    name = models.CharField(max_length=100)
+    categories = models.ManyToManyField(LearningCategory, related_name='goals', blank=True)
+    def __str__(self):
+        return self.name  
+      
 class Student(models.Model):
     full_name = models.CharField(max_length=100)
     grade = models.IntegerField()

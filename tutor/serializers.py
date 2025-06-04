@@ -6,43 +6,46 @@ class TeacherSerializer(serializers.ModelSerializer):
         model = Teacher
         fields = ['id', 'full_name', 'subject']
 
-class LearningGoalSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LearningGoal
-        fields = ['id', 'name']
+
 
 class LearningCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = LearningCategory
         fields = ['id', 'name', 'slug']
 
-class StudentSerializer(serializers.ModelSerializer):
-    learning_category = LearningCategorySerializer(read_only=True)
-    learning_goal = LearningGoalSerializer(read_only=True)
-    teacher = TeacherSerializer(read_only=True)
-    
-    learning_category_id = serializers.PrimaryKeyRelatedField(
-        queryset=LearningCategory.objects.all(), source='learning_category', write_only=True
+class LearningGoalSerializer(serializers.ModelSerializer):
+    categories = LearningCategorySerializer(many=True, read_only=True)
+    category_ids = serializers.PrimaryKeyRelatedField(
+        queryset=LearningCategory.objects.all(), many=True, write_only=True, source='categories'
     )
+
+    class Meta:
+        model = LearningGoal
+        fields = ['id', 'name', 'categories', 'category_ids']
+
+class StudentSerializer(serializers.ModelSerializer):
     learning_goal_id = serializers.PrimaryKeyRelatedField(
         queryset=LearningGoal.objects.all(), source='learning_goal', write_only=True
+    )
+    learning_category_id = serializers.PrimaryKeyRelatedField(
+        queryset=LearningCategory.objects.all(), source='learning_category', write_only=True
     )
     teacher_id = serializers.PrimaryKeyRelatedField(
         queryset=Teacher.objects.all(), source='teacher', write_only=True
     )
+    learning_goal = LearningGoalSerializer(read_only=True)
+    learning_category = LearningCategorySerializer(read_only=True)
+    teacher = TeacherSerializer(read_only=True)
+    grade = serializers.IntegerField(default=1)
 
     class Meta:
         model = Student
         fields = [
             'id', 'full_name', 'grade',
             'learning_goal', 'learning_goal_id',
-            'teacher', 'teacher_id',
-            'learning_category', 'learning_category_id'
+            'learning_category', 'learning_category_id',
+            'teacher', 'teacher_id'
         ]
-
-    def validate(self, data):
-        print(f"Валидация данных студента: {data}")
-        return data
 
 class LessonTypeSerializer(serializers.ModelSerializer):
     class Meta:
