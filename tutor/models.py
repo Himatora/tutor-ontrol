@@ -64,6 +64,7 @@ class LessonType(models.Model):
 
 class Topic(models.Model):
     name = models.CharField(max_length=100)
+    students = models.ManyToManyField(Student, related_name='topics', blank=True)
 
     def __str__(self):
         return self.name
@@ -78,7 +79,6 @@ class Lesson(models.Model):
 class Homework(models.Model):
     lesson = models.ForeignKey('Lesson', on_delete=models.CASCADE)
     topics = models.ManyToManyField('Topic')
-    status = models.CharField(max_length=20, choices=[('ASSIGNED', 'Задано'), ('NOT_ASSIGNED', 'Не задано')])
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -91,7 +91,7 @@ class HomeworkResult(models.Model):
     correct_count = models.IntegerField(default=0)
     total_count = models.IntegerField(default=0)
     percentage = models.FloatField(null=True, blank=True)
-
+    created_at = models.DateTimeField(auto_now_add=True) 
     def save(self, *args, **kwargs):
         if self.total_count > 0:
             self.percentage = (self.correct_count / self.total_count) * 100

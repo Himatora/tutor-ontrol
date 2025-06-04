@@ -64,6 +64,8 @@ class LessonTypeViewSet(viewsets.ModelViewSet):
 class TopicViewSet(viewsets.ModelViewSet):
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['id', 'students']
     permission_classes = [AllowAny]
 
 class LessonViewSet(viewsets.ModelViewSet):
@@ -80,13 +82,14 @@ class LessonViewSet(viewsets.ModelViewSet):
 class HomeworkViewSet(viewsets.ModelViewSet):
     queryset = Homework.objects.all()
     serializer_class = HomeworkSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['lesson', 'lesson__student']  # Поддержка фильтрации по lesson__student
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        homework = serializer.save()  # Сохраняем объект Homework через сериализатор
+        homework = serializer.save()
 
-        # Создаем результаты для каждой темы и уровня сложности
         results = request.data.get('results', [])
         for result in results:
             HomeworkResult.objects.create(
@@ -109,10 +112,25 @@ class HomeworkViewSet(viewsets.ModelViewSet):
 class HomeworkResultViewSet(viewsets.ModelViewSet):
     queryset = HomeworkResult.objects.all()
     serializer_class = HomeworkResultSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['homework__lesson']
+
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.db.models import Max
+from .models import JournalEntry, Student, Lesson, Homework, HomeworkResult, Topic
+from .serializers import JournalEntrySerializer
 
 class JournalViewSet(viewsets.ModelViewSet):
     queryset = JournalEntry.objects.all()
     serializer_class = JournalEntrySerializer
+
+    def get_queryset(self):
+        student_id = self.request.query_params.get('student')
+        if student_id:
+            return self.queryset.filter(student_id=student_id)
+        return self.queryset
 
     @action(detail=False, methods=['post'])
     def generate(self, request):
@@ -129,30 +147,41 @@ class JournalViewSet(viewsets.ModelViewSet):
         if not lessons:
             return Response({"detail": "No lessons found for this student"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Получаем ID уроков
+        lesson_ids = lessons.values_list('id', flat=True)
+
+        # Получаем домашние задания для этих уроков
+        homeworks = Homework.objects.filter(lesson__in=lesson_ids)
+        homework_ids = homeworks.values_list('id', flat=True)
+
+        # Получаем результаты ДЗ и берем только последние для каждой комбинации topic_id и difficulty
+        results = HomeworkResult.objects.filter(homework__in=homework_ids).order_by('topic_id', 'difficulty', '-created_at')
+        latest_results = {}
+        for result in results:
+            key = f"{result.topic_id}-{result.difficulty}"
+            if key not in latest_results:
+                latest_results[key] = result
+
         # Собираем данные для журнала
         good_results_list = []
         bad_results_list = []
         covered_topics = []
         bad_topics = []
 
-        for lesson in lessons:
-            homeworks = Homework.objects.filter(lesson=lesson)
-            for homework in homeworks:
-                results = HomeworkResult.objects.filter(homework=homework)
-                for result in results:
-                    topic_entry = f"{result.topic.name} {result.difficulty.lower()} уровня"
-                    topic_data = {
-                        "topic_id": result.topic.id,
-                        "topic_name": result.topic.name,
-                        "difficulty": result.difficulty,
-                        "percentage": result.percentage
-                    }
-                    covered_topics.append(topic_data)
-                    if result.percentage == 100:
-                        good_results_list.append(topic_entry)
-                    else:
-                        bad_results_list.append(topic_entry)
-                        bad_topics.append(topic_entry)
+        for result in latest_results.values():
+            topic_entry = f"{result.topic.name} {result.difficulty.lower()} уровня"
+            topic_data = {
+                "topic_id": result.topic.id,
+                "topic_name": result.topic.name,
+                "difficulty": result.difficulty,
+                "percentage": result.percentage
+            }
+            covered_topics.append(topic_data)
+            if result.percentage == 100:
+                good_results_list.append(topic_entry)
+            else:
+                bad_results_list.append(topic_entry)
+                bad_topics.append(topic_entry)
 
         # Формируем первый блок: Хорошие и плохие результаты
         if good_results_list and bad_results_list:
@@ -196,12 +225,12 @@ class JournalViewSet(viewsets.ModelViewSet):
         journal_entry = JournalEntry.objects.create(
             student=student,
             good_results=good_results,
-            bad_results=covered_topics_text,  # Используем bad_results для хранения списка всех тем
-            covered_topics=covered_topics_text,  # JSONField с детальными данными
+            bad_results=covered_topics_text,  # Храним список всех тем
+            covered_topics=covered_topics_text,
             working_on=working_on,
             recommended_lessons=recommended_lessons,
             recommendation_reason=recommendation_reason
         )
 
-        serializer = JournalEntrySerializer(journal_entry)
+        serializer = self.get_serializer(journal_entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

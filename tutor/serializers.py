@@ -50,9 +50,13 @@ class LessonTypeSerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 class TopicSerializer(serializers.ModelSerializer):
+    students = serializers.PrimaryKeyRelatedField(
+        queryset=Student.objects.all(), many=True, required=False
+    )
+
     class Meta:
         model = Topic
-        fields = ['id', 'name']
+        fields = ['id', 'name', 'students']
 
 class LessonSerializer(serializers.ModelSerializer):
     student = StudentSerializer(read_only=True)
@@ -78,7 +82,7 @@ class HomeworkResultSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = HomeworkResult
-        fields = ['id', 'topic_id', 'difficulty', 'correct_count', 'total_count', 'percentage']
+        fields = ['id', 'topic_id', 'difficulty', 'correct_count', 'total_count', 'percentage','created_at']
 
 class HomeworkSerializer(serializers.ModelSerializer):
     lesson_id = serializers.PrimaryKeyRelatedField(queryset=Lesson.objects.all(), source='lesson')
@@ -87,7 +91,7 @@ class HomeworkSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Homework
-        fields = ['id', 'lesson_id', 'topic_ids', 'status', 'created_at', 'results']
+        fields = ['id', 'lesson_id', 'topic_ids', 'created_at', 'results']
         
 
 
