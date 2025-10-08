@@ -5,8 +5,7 @@ pipeline {
         CMD = 'C:\\Windows\\System32\\cmd.exe'
         PM2_CMD = 'C:\\Users\\User\\node_modules\\.bin\\pm2.cmd'
         PYTHON_EXE = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-        SERVER_DIR = 'C:\\Users\\User\\Desktop\\jenkins\\tutor-ontrol_server'
-        WORK_DIR = 'C:\\Users\\User\\Desktop\\jenkins\\tutor-ontrol'
+        TARGET_DIR = 'C:\\Users\\User\\Desktop\\jenkins\tutor-ontrol_server'
     }
 
     triggers { 
@@ -14,82 +13,14 @@ pipeline {
     }
 
     stages {
-        stage('Setup Git Safety') {
-            steps {
-                bat """
-                    :: Добавляем безопасную директорию для Git
-                    git config --global --add safe.directory "C:/Users/User/Desktop/jenkins/tutor-ontrol"
-                    git config --global --add safe.directory "C:/Users/User/Desktop/jenkins/tutor-ontrol_server"
-                """
-            }
-        }
-
-        stage('Pull Latest Changes') {
-            steps {
-                withCredentials([
-                    usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
-                    string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
-                ]) {
-                    bat """
-                        cd "${WORK_DIR}"
-                        
-                        :: Настраиваем git для этой директории
-                        git config user.name "%GIT_USER%"
-                        git config user.email "%GIT_EMAIL%"
-                        
-                        :: Получаем последние изменения
-                        git fetch origin
-                        git checkout fix
-                        git reset --hard origin/fix
-                        
-                        echo "Changes pulled successfully from fix branch"
-                        
-                        :: Копируем только нужные файлы, исключая node_modules и другие
-                        robocopy "${WORK_DIR}" "${SERVER_DIR}" /E /XF package-lock.json /XD node_modules __pycache__ .git .vscode
-                    """
-                }
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                bat """
-                    echo "Installing Python dependencies..."
-                    cd "${SERVER_DIR}"
-                    "${PYTHON_EXE}" -m pip install -r requirements.txt || echo "Python dependencies installed with warnings"
-
-                    echo "Installing frontend dependencies..."
-                    cd "${SERVER_DIR}\\client"
-                    call npm install || echo "NPM dependencies installed with warnings"
-                    
-                    echo "Dependencies installation completed"
-                """
-            }
-        }
-
-        stage('Stop Existing Servers') {
-            steps {
-                bat """
-                    echo "Stopping existing servers..."
-                    call "${PM2_CMD}" delete django || echo "No Django process to stop"
-                    call "${PM2_CMD}" delete vue || echo "No Vue process to stop"
-                    timeout /t 5 /nobreak > nul
-                """
-            }
-        }
-
         stage('Start Backend Server') {
             steps {
                 bat """
-                    echo "Starting backend server..."
-                    cd "${SERVER_DIR}"
+                    cd "${TARGET_DIR}"
 
-                    :: Запускаем бекенд
+                    call "${PM2_CMD}" delete django || echo No existing Django process
+
                     call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
-                    timeout /t 10 /nobreak > nul
-                    
-                    echo "Backend server started"
-                    call "${PM2_CMD}" list
                 """
             }
         }
@@ -97,15 +28,13 @@ pipeline {
         stage('Start Frontend Server') {
             steps {
                 bat """
-                    echo "Starting frontend server..."
-                    cd "${SERVER_DIR}\\client"
+                    cd "${TARGET_DIR}\\client"
 
-                    :: Запускаем фронтенд
-                    call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${SERVER_DIR}\\client && npm run dev"
-                    timeout /t 10 /nobreak > nul
+                    call "${PM2_CMD}" delete vue || echo No existing Vue process
 
-                    echo "Frontend server started"
-                    call "${PM2_CMD}" list
+                    call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+
+                    echo Frontend started in background via PM2
                 """
             }
         }
@@ -114,25 +43,25 @@ pipeline {
             steps {
                 script {
                     try {
+                        // Запуск Django тестов
                         bat """
-                            cd "${SERVER_DIR}"
-                            echo "Running Django tests..."
-                            "${PYTHON_EXE}" manage.py test --noinput
+                            cd "${TARGET_DIR}"
+                            "${PYTHON_EXE}" manage.py test
                         """
-                        echo "✅ All Django tests passed!"
+                        echo "All Django tests passed! Keeping servers running."
                     } catch (err) {
-                        echo "❌ Tests failed! Stopping servers..."
+                        // Если тесты провалились - останавливаем серверы
+                        echo "Tests failed! Stopping servers..."
                         bat """
-                            call "${PM2_CMD}" delete django || echo "No Django process to delete"
-                            call "${PM2_CMD}" delete vue || echo "No Vue process to delete"
+                            "${PM2_CMD}" delete django || echo No Django process to delete
+                            "${PM2_CMD}" delete vue || echo No Vue process to delete
                         """
                         error("Django tests failed. Servers stopped.")
                     }
                  }
             }
         }
-
-        stage('Merge and Sync Branches') {
+        stage('Merge fix into main and sync fix') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
@@ -142,60 +71,40 @@ pipeline {
                     string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
                 ]) {
                     bat """
-                        cd "${WORK_DIR}"
-                        
-                        :: Настраиваем git
+                        cd "${TARGET_DIR}"
                         git config user.name "%GIT_USER%"
                         git config user.email "%GIT_EMAIL%"
 
-                        :: Переключаемся на main и обновляем
                         git checkout main
-                        git pull origin main
+                        git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
 
-                        :: Мержим fix в main
-                        git merge fix --no-ff -m "Merge fix branch [Jenkins Build: ${BUILD_NUMBER}]"
+                        :: Сливаем fix
+                        git merge fix
 
-                        :: Пушим изменения
-                        git push origin main
+                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
 
-                        :: Синхронизируем fix с main
+                        :: Теперь синхронизируем fix с main (чтобы обе ветки идентичны)
                         git checkout fix
-                        git merge main --no-edit
-                        git push origin fix
+                        git reset --hard main
+                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
 
-                        echo "✅ Branches merged and synced successfully"
+                        :: Перезапуск серверов
+                        call "${PM2_CMD}" delete django || echo No Django process
+                        call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+
+                        call "${PM2_CMD}" delete vue || echo No Vue process
+                        call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
                     """
                 }
-            }
-        }
-
-        stage('Verify Servers') {
-            steps {
-                bat """
-                    echo "Verifying servers are running..."
-                    call "${PM2_CMD}" list
-                    
-                    echo "✅ Pipeline completed successfully!"
-                    echo "🌐 Backend should be at: http://127.0.0.1:8000/"
-                    echo "🖥️ Frontend should be at: http://localhost:5173/"
-                """
             }
         }
     }
 
     post {
-        always {
-            echo "Pipeline execution completed with status: ${currentBuild.result}"
-            bat """
-                call "${PM2_CMD}" list
-            """
-        }
         success {
-            echo "🎉 Pipeline completed successfully!"
-            echo "📝 Changes merged to main and fix branches"
-        }
-        failure {
-            echo "❌ Pipeline failed! Check the logs above."
+            echo "Backend and Frontend are running via PM2!"
+            echo "Backend: http://127.0.0.1:8000/"
+            echo "Frontend: http://127.0.0.1:5173/"
         }
     }
 }
