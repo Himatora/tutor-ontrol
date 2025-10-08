@@ -72,6 +72,10 @@ pipeline {
         ]) {
             bat """
                 cd "${TARGET_DIR}"
+                
+                :: Добавляем директорию в безопасные для Git
+                git config --global --add safe.directory "${TARGET_DIR}"
+                
                 git config user.name "%GIT_USER%"
                 git config user.email "%GIT_EMAIL%"
 
