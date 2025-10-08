@@ -5,7 +5,8 @@ pipeline {
         CMD = 'C:\\Windows\\System32\\cmd.exe'
         PM2_CMD = 'C:\\Users\\User\\node_modules\\.bin\\pm2.cmd'
         PYTHON_EXE = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-        TARGET_DIR = 'C:\\Users\\User\\Desktop\\jenkins\\tutor-ontrol_server'
+        SERVER_DIR = 'C:\\Users\\User\\Desktop\\jenkins\\tutor-ontrol_server'
+        WORK_DIR = 'C:\\Users\\User\\Desktop\\jenkins\\tutor-ontrol'
     }
 
     triggers { 
@@ -13,10 +14,32 @@ pipeline {
     }
 
     stages {
+        stage('Pull Latest Changes') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
+                    string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
+                ]) {
+                    bat """
+                        cd "${WORK_DIR}"
+                        git config user.name "%GIT_USER%"
+                        git config user.email "%GIT_EMAIL%"
+                        
+                        git fetch origin
+                        git checkout fix
+                        git pull origin fix
+                        
+                        :: Копируем изменения в серверную папку
+                        xcopy "${WORK_DIR}\\*" "${SERVER_DIR}\\" /E /Y /I
+                    """
+                }
+            }
+        }
+
         stage('Start Backend Server') {
             steps {
                 bat """
-                    cd "${TARGET_DIR}"
+                    cd "${SERVER_DIR}"
 
                     call "${PM2_CMD}" delete django || echo No existing Django process
 
@@ -28,11 +51,11 @@ pipeline {
         stage('Start Frontend Server') {
             steps {
                 bat """
-                    cd "${TARGET_DIR}\\client"
+                    cd "${SERVER_DIR}\\client"
 
                     call "${PM2_CMD}" delete vue || echo No existing Vue process
 
-                    call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+                    call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${SERVER_DIR}\\client && npm run dev"
 
                     echo Frontend started in background via PM2
                 """
@@ -45,7 +68,7 @@ pipeline {
                     try {
                         // Запуск Django тестов
                         bat """
-                            cd "${TARGET_DIR}"
+                            cd "${SERVER_DIR}"
                             "${PYTHON_EXE}" manage.py test
                         """
                         echo "All Django tests passed! Keeping servers running."
@@ -61,7 +84,8 @@ pipeline {
                  }
             }
         }
-        stage('Merge fix into main and sync fix') {
+
+        stage('Merge fix into main and sync') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
@@ -71,40 +95,64 @@ pipeline {
                     string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
                 ]) {
                     bat """
-                        cd "${TARGET_DIR}"
+                        cd "${WORK_DIR}"
+                        
+                        :: Настраиваем git
                         git config user.name "%GIT_USER%"
                         git config user.email "%GIT_EMAIL%"
 
+                        :: Переключаемся на main и обновляем
                         git checkout main
-                        git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+                        git pull origin main
 
-                        :: Сливаем fix
-                        git merge fix
+                        :: Мержим fix в main
+                        git merge fix --no-ff -m "Merge fix branch [Jenkins Build: ${BUILD_NUMBER}]"
 
-                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+                        :: Пушим изменения в main
+                        git push origin main
 
-                        :: Теперь синхронизируем fix с main (чтобы обе ветки идентичны)
+                        :: Синхронизируем fix с main
                         git checkout fix
-                        git reset --hard main
-                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
+                        git merge main --no-edit
 
-                        :: Перезапуск серверов
-                        call "${PM2_CMD}" delete django || echo No Django process
-                        call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+                        :: Пушим обновленный fix
+                        git push origin fix
 
-                        call "${PM2_CMD}" delete vue || echo No Vue process
-                        call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+                        :: Копируем финальную версию в серверную папку
+                        xcopy "${WORK_DIR}\\*" "${SERVER_DIR}\\" /E /Y /I
                     """
                 }
+            }
+        }
+
+        stage('Restart Servers') {
+            steps {
+                bat """
+                    :: Перезапускаем бекенд
+                    cd "${SERVER_DIR}"
+                    call "${PM2_CMD}" delete django || echo No Django process
+                    call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+
+                    :: Перезапускаем фронтенд
+                    cd "${SERVER_DIR}\\client"
+                    call "${PM2_CMD}" delete vue || echo No Vue process
+                    call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${SERVER_DIR}\\client && npm run dev"
+
+                    echo "Servers restarted with latest changes"
+                """
             }
         }
     }
 
     post {
         success {
-            echo "Backend and Frontend are running via PM2!"
+            echo "Pipeline completed successfully!"
             echo "Backend: http://127.0.0.1:8000/"
-            echo "Frontend: http://127.0.0.1:5173/"
+            echo "Frontend: http://localhost:5173/"
+            echo "Changes are live and merged to main branch"
+        }
+        failure {
+            echo "Pipeline failed! Check the logs above."
         }
     }
 }
