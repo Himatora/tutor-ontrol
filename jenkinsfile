@@ -5,7 +5,7 @@ pipeline {
         CMD = 'C:\\Windows\\System32\\cmd.exe'
         PM2_CMD = 'C:\\Users\\User\\node_modules\\.bin\\pm2.cmd'
         PYTHON_EXE = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-        TARGET_DIR = 'C:\\Users\\User\\Desktop\\jenkins\tutor-ontrol_server'
+        TARGET_DIR = 'C:\\Users\\User\\Desktop\\tutorControl\\tutor-ontrol_serv'
     }
 
     triggers { 
@@ -46,7 +46,7 @@ pipeline {
                         // Запуск Django тестов
                         bat """
                             cd "${TARGET_DIR}"
-                            "${PYTHON_EXE}" manage.py test
+                            "${PYTHON_EXE}" manage.py test --verbosity=2
                         """
                         echo "All Django tests passed! Keeping servers running."
                     } catch (err) {
@@ -61,7 +61,7 @@ pipeline {
                  }
             }
         }
-        stage('Merge fix into master and sync fix') {
+        stage('Merge fix into main and sync fix') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
@@ -75,7 +75,7 @@ pipeline {
                         git config user.name "%GIT_USER%"
                         git config user.email "%GIT_EMAIL%"
 
-                        git checkout master
+                        git checkout main
                         git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
 
                         :: Сливаем fix
@@ -83,9 +83,9 @@ pipeline {
 
                         git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
 
-                        :: Теперь синхронизируем fix с master (чтобы обе ветки идентичны)
+                        :: Теперь синхронизируем fix с main (чтобы обе ветки идентичны)
                         git checkout fix
-                        git reset --hard master
+                        git reset --hard main
                         git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
 
                         :: Перезапуск серверов
@@ -97,29 +97,9 @@ pipeline {
                     """
                 }
             }
-        } 
-        stage('Update Working Directory with Master') {
-    when {
-        expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-    }
-    steps {
-        withCredentials([
-            usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')
-        ]) {
-            bat """
-                cd "${TARGET_DIR}"
-                
-                :: Принудительно обновляем рабочую директорию до последнего коммита в master
-                git fetch https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
-                git reset --hard FETCH_HEAD
-                
-                echo "Working directory successfully updated to latest master"
-            """
         }
     }
-}
-    }
-   
+
     post {
         success {
             echo "Backend and Frontend are running via PM2!"
