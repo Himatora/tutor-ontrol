@@ -46,7 +46,7 @@ pipeline {
                         // Запуск Django тестов
                         bat """
                             cd "${TARGET_DIR}"
-                            "${PYTHON_EXE}" manage.py test --verbosity=2
+                            "${PYTHON_EXE}" manage.py test
                         """
                         echo "All Django tests passed! Keeping servers running."
                     } catch (err) {
