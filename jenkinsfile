@@ -97,9 +97,8 @@ pipeline {
                     """
                 }
             }
-        }
-    }
-    stage('Update Working Directory with Master') {
+        } 
+        stage('Update Working Directory with Master') {
     when {
         expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
     }
@@ -119,6 +118,8 @@ pipeline {
         }
     }
 }
+    }
+   
     post {
         success {
             echo "Backend and Frontend are running via PM2!"
