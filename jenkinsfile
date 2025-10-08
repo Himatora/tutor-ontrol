@@ -3,9 +3,9 @@ pipeline {
 
     environment {
         CMD = 'C:\\Windows\\System32\\cmd.exe'
-        PM2_CMD = 'C:\\Users\\User\\node_modules\\.bin\\pm2.cmd'
-        PYTHON_EXE = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-        TARGET_DIR = 'C:\\Users\\User\\Desktop\\tutorControl\\tutor-ontrol_serv'
+        PM2_CMD = 'C:\\Users\\ashflaare\\AppData\\Roaming\\npm\\pm2.cmd'
+        PYTHON_EXE = 'C:\\Program Files\\Python313\\python.exe'
+        TARGET_DIR = 'C:\\Users\\ashflaare\\Desktop\\study\\4_c\\devops\\project_serv'
     }
 
     triggers { 
@@ -43,81 +43,60 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Запуск Django тестов
                         bat """
                             cd "${TARGET_DIR}"
-                            "${PYTHON_EXE}" manage.py test --verbosity=2
+                            "${PYTHON_EXE}" application\\integrationtests.py
                         """
-                        echo "All Django tests passed! Keeping servers running."
+                        echo "Tests passed! Keeping servers running."
                     } catch (err) {
-                        // Если тесты провалились - останавливаем серверы
                         echo "Tests failed! Stopping servers..."
+
                         bat """
                             "${PM2_CMD}" delete django || echo No Django process to delete
                             "${PM2_CMD}" delete vue || echo No Vue process to delete
                         """
-                        error("Django tests failed. Servers stopped.")
+                        error("Integration tests failed. Servers stopped.")
                     }
-                 }
+                }
             }
         }
         stage('Merge fix into master and sync fix') {
-    when {
-        expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-    }
-    steps {
-        withCredentials([
-            usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
-            string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
-        ]) {
-            bat """
-                cd "${TARGET_DIR}"
-                
-                :: Добавляем директорию в безопасные для Git
-                git config --global --add safe.directory "${TARGET_DIR}"
-                
-                git config user.name "%GIT_USER%"
-                git config user.email "%GIT_EMAIL%"
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
+                    string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
+                ]) {
+                    bat """
+                        cd "${TARGET_DIR}"
+                        git config user.name "%GIT_USER%"
+                        git config user.email "%GIT_EMAIL%"
 
-                echo "=== Current branch status ==="
-                git branch -a
-                git status
+                        git checkout master
+                        git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/AshFlaare/task_sharing_management_system.git master
 
-                echo "=== Fetching all branches from remote ==="
-                git fetch --all
+                        :: Сливаем fix
+                        git merge fix
 
-                echo "=== Checking out master branch ==="
-                git checkout master
+                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com/AshFlaare/task_sharing_management_system.git master
 
-                echo "=== Pulling latest master with rebase ==="
-                git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+                        :: Теперь синхронизируем fix с master (чтобы обе ветки идентичны)
+                        git checkout fix
+                        git reset --hard master
+                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/AshFlaare/task_sharing_management_system.git fix
 
-                echo "=== Merging fix into master ==="
-                git merge fix --no-ff -m "Jenkins: Merge fix into master [Build ${env.BUILD_NUMBER}]"
+                        :: Перезапуск серверов
+                        call "${PM2_CMD}" delete django || echo No Django process
+                        call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
 
-                echo "=== Pushing master to remote ==="
-                git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
-
-                echo "=== Verifying push was successful ==="
-                git log --oneline -3
-
-                echo "=== Syncing fix branch with master ==="
-                git checkout fix
-                git reset --hard master
-                git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
-
-                echo "=== Branch sync completed successfully ==="
-
-                :: Перезапуск серверов
-                call "${PM2_CMD}" delete django || echo No Django process
-                call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
-
-                call "${PM2_CMD}" delete vue || echo No Vue process
-                call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
-            """
+                        call "${PM2_CMD}" delete vue || echo No Vue process
+                        call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+                    """
+                }
+            }
         }
-    }
-}
     }
 
     post {
