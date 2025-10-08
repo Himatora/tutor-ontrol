@@ -5,7 +5,7 @@ pipeline {
         CMD = 'C:\\Windows\\System32\\cmd.exe'
         PM2_CMD = 'C:\\Users\\User\\node_modules\\.bin\\pm2.cmd'
         PYTHON_EXE = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-        TARGET_DIR = 'C:\\Users\\User\\Desktop\\jenkins\tutor-ontrol_server'
+        TARGET_DIR = 'C:\\Users\\User\\Desktop\\tutorControl\\tutor-ontrol_serv'
     }
 
     triggers { 
@@ -46,7 +46,7 @@ pipeline {
                         // Запуск Django тестов
                         bat """
                             cd "${TARGET_DIR}"
-                            "${PYTHON_EXE}" manage.py test
+                            "${PYTHON_EXE}" manage.py test --verbosity=2
                         """
                         echo "All Django tests passed! Keeping servers running."
                     } catch (err) {
