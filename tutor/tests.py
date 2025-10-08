@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 import datetime
 from .models import *
+from django.urls import reverse
 
 class TeacherModelTests(TestCase):
     def test_teacher_creation(self):
