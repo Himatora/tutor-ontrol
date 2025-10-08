@@ -99,7 +99,26 @@ pipeline {
             }
         }
     }
-
+    stage('Update Working Directory with Master') {
+    when {
+        expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+    }
+    steps {
+        withCredentials([
+            usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')
+        ]) {
+            bat """
+                cd "${TARGET_DIR}"
+                
+                :: Принудительно обновляем рабочую директорию до последнего коммита в master
+                git fetch https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+                git reset --hard FETCH_HEAD
+                
+                echo "Working directory successfully updated to latest master"
+            """
+        }
+    }
+}
     post {
         success {
             echo "Backend and Frontend are running via PM2!"
