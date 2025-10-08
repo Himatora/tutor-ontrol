@@ -61,7 +61,7 @@ pipeline {
                  }
             }
         }
-        stage('Merge fix into main and sync fix') {
+        stage('Merge fix into master and sync fix') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
@@ -75,7 +75,7 @@ pipeline {
                         git config user.name "%GIT_USER%"
                         git config user.email "%GIT_EMAIL%"
 
-                        git checkout main
+                        git checkout master
                         git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
 
                         :: Сливаем fix
@@ -83,9 +83,9 @@ pipeline {
 
                         git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
 
-                        :: Теперь синхронизируем fix с main (чтобы обе ветки идентичны)
+                        :: Теперь синхронизируем fix с master (чтобы обе ветки идентичны)
                         git checkout fix
-                        git reset --hard main
+                        git reset --hard master
                         git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
 
                         :: Перезапуск серверов
