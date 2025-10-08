@@ -3,7 +3,7 @@
     <div class="card-body">
       <h2>Журнал успеваемости</h2>
       <div class="controls mb-3">
-        <button @click="generateJournal" class="btn btn-primary">Сформировать журнал^</button>
+        <button @click="generateJournal" class="btn btn-primary">Сформировать журнал^^</button>
       </div>
       <div v-if="selectedStudent" class="student-info mb-3 p-3">
         <h3>{{ selectedStudent.full_name }}</h3>
