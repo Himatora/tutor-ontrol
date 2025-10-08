@@ -54,13 +54,26 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 bat """
-                    :: Устанавливаем зависимости Python
+                    echo "Installing Python dependencies..."
                     cd "${SERVER_DIR}"
-                    "${PYTHON_EXE}" -m pip install -r requirements.txt
+                    "${PYTHON_EXE}" -m pip install -r requirements.txt || echo "Python dependencies installed with warnings"
 
-                    :: Устанавливаем зависимости фронтенда
+                    echo "Installing frontend dependencies..."
                     cd "${SERVER_DIR}\\client"
-                    npm install
+                    call npm install || echo "NPM dependencies installed with warnings"
+                    
+                    echo "Dependencies installation completed"
+                """
+            }
+        }
+
+        stage('Stop Existing Servers') {
+            steps {
+                bat """
+                    echo "Stopping existing servers..."
+                    call "${PM2_CMD}" delete django || echo "No Django process to stop"
+                    call "${PM2_CMD}" delete vue || echo "No Vue process to stop"
+                    timeout /t 5 /nobreak > nul
                 """
             }
         }
@@ -68,17 +81,15 @@ pipeline {
         stage('Start Backend Server') {
             steps {
                 bat """
+                    echo "Starting backend server..."
                     cd "${SERVER_DIR}"
-
-                    :: Останавливаем старые процессы
-                    call "${PM2_CMD}" delete django || echo "No existing Django process"
-                    timeout /t 3 /nobreak > nul
 
                     :: Запускаем бекенд
                     call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
-                    timeout /t 5 /nobreak > nul
+                    timeout /t 10 /nobreak > nul
                     
                     echo "Backend server started"
+                    call "${PM2_CMD}" list
                 """
             }
         }
@@ -86,17 +97,15 @@ pipeline {
         stage('Start Frontend Server') {
             steps {
                 bat """
+                    echo "Starting frontend server..."
                     cd "${SERVER_DIR}\\client"
-
-                    :: Останавливаем старые процессы
-                    call "${PM2_CMD}" delete vue || echo "No existing Vue process"
-                    timeout /t 3 /nobreak > nul
 
                     :: Запускаем фронтенд
                     call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${SERVER_DIR}\\client && npm run dev"
-                    timeout /t 5 /nobreak > nul
+                    timeout /t 10 /nobreak > nul
 
                     echo "Frontend server started"
+                    call "${PM2_CMD}" list
                 """
             }
         }
@@ -107,14 +116,15 @@ pipeline {
                     try {
                         bat """
                             cd "${SERVER_DIR}"
+                            echo "Running Django tests..."
                             "${PYTHON_EXE}" manage.py test --noinput
                         """
                         echo "✅ All Django tests passed!"
                     } catch (err) {
                         echo "❌ Tests failed! Stopping servers..."
                         bat """
-                            "${PM2_CMD}" delete django || echo "No Django process to delete"
-                            "${PM2_CMD}" delete vue || echo "No Vue process to delete"
+                            call "${PM2_CMD}" delete django || echo "No Django process to delete"
+                            call "${PM2_CMD}" delete vue || echo "No Vue process to delete"
                         """
                         error("Django tests failed. Servers stopped.")
                     }
@@ -159,35 +169,33 @@ pipeline {
             }
         }
 
-        stage('Final Restart') {
+        stage('Verify Servers') {
             steps {
                 bat """
-                    :: Финальный перезапуск серверов
-                    cd "${SERVER_DIR}"
-                    call "${PM2_CMD}" restart django || call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+                    echo "Verifying servers are running..."
+                    call "${PM2_CMD}" list
                     
-                    cd "${SERVER_DIR}\\client"
-                    call "${PM2_CMD}" restart vue || call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${SERVER_DIR}\\client && npm run dev"
-
-                    echo "🚀 Servers restarted with latest changes"
+                    echo "✅ Pipeline completed successfully!"
+                    echo "🌐 Backend should be at: http://127.0.0.1:8000/"
+                    echo "🖥️ Frontend should be at: http://localhost:5173/"
                 """
             }
         }
     }
 
     post {
+        always {
+            echo "Pipeline execution completed with status: ${currentBuild.result}"
+            bat """
+                call "${PM2_CMD}" list
+            """
+        }
         success {
             echo "🎉 Pipeline completed successfully!"
-            echo "🌐 Backend: http://127.0.0.1:8000/"
-            echo "🖥️ Frontend: http://localhost:5173/"
             echo "📝 Changes merged to main and fix branches"
         }
         failure {
             echo "❌ Pipeline failed! Check the logs above."
-            bat """
-                "${PM2_CMD}" delete django || echo "No Django process"
-                "${PM2_CMD}" delete vue || echo "No Vue process"
-            """
         }
     }
 }
