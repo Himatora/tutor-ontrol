@@ -5,7 +5,7 @@ pipeline {
         CMD = 'C:\\Windows\\System32\\cmd.exe'
         PM2_CMD = 'C:\\Users\\User\\node_modules\\.bin\\pm2.cmd'
         PYTHON_EXE = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-        TARGET_DIR = 'C:\\Users\\User\\Desktop\\tutorControl\\tutor-ontrol_serv'
+        TARGET_DIR = 'C:\\Users\\User\\Desktop\\jenkins\\tutor-ontrol_server'
     }
 
     triggers { 
@@ -46,7 +46,7 @@ pipeline {
                         // Запуск Django тестов
                         bat """
                             cd "${TARGET_DIR}"
-                            "${PYTHON_EXE}" manage.py test --verbosity=2
+                            "${PYTHON_EXE}" manage.py test
                         """
                         echo "All Django tests passed! Keeping servers running."
                     } catch (err) {
@@ -71,29 +71,58 @@ pipeline {
                     string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
                 ]) {
                     bat """
-                        cd "${TARGET_DIR}"
+                        :: Очистка локальных изменений и сброс состояния
+                        git reset --hard HEAD
+                        git clean -fd
+
+                        :: Настройка git
                         git config user.name "%GIT_USER%"
                         git config user.email "%GIT_EMAIL%"
 
-                        git checkout master
-                        git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+                        :: Получение всех веток
+                        git fetch --all
 
-                        :: Сливаем fix
+                        :: Создание ветки master если её нет
+                        git checkout -B master origin/master 2>nul || git checkout -B master origin/fix
+
+                        :: Обновление master
+                        git pull https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git master
+
+                        :: Переключение на fix и обновление
+                        git checkout fix
+                        git pull https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git fix
+
+                        :: Слияние fix в master
+                        git checkout master
                         git merge fix
 
-                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+                        :: Пушим в СВОЙ репозиторий (исправьте на ваш)
+                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git master
 
-                        :: Теперь синхронизируем fix с master (чтобы обе ветки идентичны)
+                        :: Синхронизация fix с master
                         git checkout fix
                         git reset --hard master
-                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
+                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git fix
 
-                        :: Перезапуск серверов
-                        call "${PM2_CMD}" delete django || echo No Django process
-                        call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+                        :: Перезапуск серверов через ecosystem.config.js
+                        cd "${TARGET_DIR}"
 
-                        call "${PM2_CMD}" delete vue || echo No Vue process
-                        call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+                        :: Останавливаем и удаляем все процессы PM2
+                        call "${PM2_CMD}" delete all || echo No processes to delete
+
+                        :: Запускаем все приложения через конфигурационный файл
+                        call "${PM2_CMD}" start ecosystem.config.js
+
+                        :: Ждем немного для стабилизации процессов
+                        ping -n 5 127.0.0.1 > nul
+
+                        :: Проверяем статус всех процессов
+                        echo Current PM2 status:
+                        call "${PM2_CMD}" list
+
+                        :: Проверяем логи Vue приложения (первые 10 строк)
+                        echo Vue app logs:
+                        call "${PM2_CMD}" logs vue --lines 10 --nostream
                     """
                 }
             }
