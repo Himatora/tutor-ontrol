@@ -6,6 +6,7 @@ pipeline {
         PM2_CMD = 'C:\\Users\\User\\node_modules\\.bin\\pm2.cmd'
         PYTHON_EXE = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
         TARGET_DIR = 'C:\\Users\\User\\Desktop\\jenkins\\tutor-ontrol_server'
+        GIT_REPO_URL = 'https://github.com/Himatora/tutor-ontrol.git'
     }
 
     triggers { 
@@ -13,14 +14,38 @@ pipeline {
     }
 
     stages {
+        stage('Clean Workspace and Setup') {
+            steps {
+                bat """
+                    echo "Cleaning workspace and setting up environment..."
+                    cd "${TARGET_DIR}"
+                    
+                    echo "Current directory:"
+                    cd
+                    
+                    echo "Git status before operations:"
+                    git status || echo "Git not initialized"
+                    
+                    echo "PM2 processes before start:"
+                    "${PM2_CMD}" list || echo "PM2 not running"
+                """
+            }
+        }
+
         stage('Start Backend Server') {
             steps {
                 bat """
                     cd "${TARGET_DIR}"
 
-                    call "${PM2_CMD}" delete django || echo No existing Django process
+                    echo "Stopping existing Django processes..."
+                    "${PM2_CMD}" delete django || echo "No existing Django process found"
 
-                    call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+                    echo "Starting Django server..."
+                    "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+                    
+                    echo "Checking if Django started..."
+                    "${PM2_CMD}" list
+                    timeout 10 || echo "Timeout check complete"
                 """
             }
         }
@@ -30,11 +55,14 @@ pipeline {
                 bat """
                     cd "${TARGET_DIR}\\client"
 
-                    call "${PM2_CMD}" delete vue || echo No existing Vue process
+                    echo "Stopping existing Vue processes..."
+                    "${PM2_CMD}" delete vue || echo "No existing Vue process found"
 
-                    call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+                    echo "Starting Vue development server..."
+                    "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
 
-                    echo Frontend started in background via PM2
+                    echo "Frontend started in background via PM2"
+                    "${PM2_CMD}" list
                 """
             }
         }
@@ -43,18 +71,17 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Запуск Django тестов
+                        echo "Running Django tests..."
                         bat """
                             cd "${TARGET_DIR}"
-                            "${PYTHON_EXE}" manage.py test
+                            "${PYTHON_EXE}" manage.py test --verbosity=2
                         """
-                        echo "All Django tests passed! Keeping servers running."
+                        echo "✅ All Django tests passed! Keeping servers running."
                     } catch (err) {
-                        // Если тесты провалились - останавливаем серверы
-                        echo "Tests failed! Stopping servers..."
+                        echo "❌ Tests failed! Stopping servers..."
                         bat """
-                            "${PM2_CMD}" delete django || echo No Django process to delete
-                            "${PM2_CMD}" delete vue || echo No Vue process to delete
+                            "${PM2_CMD}" delete django || echo "No Django process to delete"
+                            "${PM2_CMD}" delete vue || echo "No Vue process to delete"
                         """
                         error("Django tests failed. Servers stopped.")
                     }
@@ -62,54 +89,154 @@ pipeline {
             }
         }
 
-        stage('Merge fix into master and sync fix') {
+        stage('Merge fix into master and sync') {
             when {
-                branch 'fix' // Только для fix ветки
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                branch 'fix'
+                expression { 
+                    currentBuild.result == null || currentBuild.result == 'SUCCESS' 
+                }
             }
             steps {
                 withCredentials([
-                    usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
-                    string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
+                    usernamePassword(
+                        credentialsId: 'github-creds', 
+                        usernameVariable: 'GIT_USER', 
+                        passwordVariable: 'GIT_TOKEN'
+                    ),
+                    string(
+                        credentialsId: 'github-email', 
+                        variable: 'GIT_EMAIL'
+                    )
                 ]) {
-                    bat """
-                        cd "${TARGET_DIR}"
-                        git config user.name "%GIT_USER%"
-                        git config user.email "%GIT_EMAIL%"
-                        
-                        # ПРАВИЛЬНЫЙ URL
-                        git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
-                        
-                        git checkout master
-                        git pull --rebase origin master
-                        
-                        # Сливаем fix в master (без даты)
-                        git merge fix -m "Auto-merge"
-                        
-                        git push origin master
-                        
-                        # Синхронизируем fix с master
-                        git checkout fix
-                        git merge master -m "Sync with master"
-                        git push origin fix
-
-                        :: Перезапуск серверов
-                        call "${PM2_CMD}" delete django || echo No Django process
-                        call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
-
-                        call "${PM2_CMD}" delete vue || echo No Vue process
-                        call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
-                    """
+                    script {
+                        try {
+                            bat """
+                                cd "${TARGET_DIR}"
+                                
+                                echo "=== GIT CONFIGURATION ==="
+                                git config user.name "%GIT_USER%"
+                                git config user.email "%GIT_EMAIL%"
+                                
+                                echo "=== CURRENT BRANCH INFO ==="
+                                git branch -a
+                                git status
+                                
+                                echo "=== SETTING UP REMOTE URL ==="
+                                git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
+                                
+                                echo "=== FETCHING LATEST CHANGES ==="
+                                git fetch --all
+                                git remote -v
+                                
+                                echo "=== SWITCHING TO MASTER ==="
+                                git checkout master
+                                
+                                echo "=== PULLING MASTER WITH REBASE ==="
+                                git pull --rebase origin master
+                                
+                                echo "=== MERGING FIX INTO MASTER ==="
+                                git merge fix -m "Auto-merge from Jenkins build ${BUILD_NUMBER}"
+                                
+                                echo "=== PUSHING MASTER ==="
+                                git push origin master
+                                
+                                echo "✅ Successfully merged fix into master"
+                                
+                                echo "=== SYNCING FIX WITH MASTER ==="
+                                git checkout fix
+                                git pull origin fix --rebase || echo "No existing fix branch on remote"
+                                git merge master -m "Sync fix with master after build ${BUILD_NUMBER}"
+                                git push origin fix
+                                
+                                echo "✅ Successfully synced fix with master"
+                                
+                                echo "=== FINAL BRANCH STATUS ==="
+                                git branch -v
+                            """
+                        } catch (Exception e) {
+                            echo "❌ Git operations failed: ${e.message}"
+                            bat """
+                                echo "=== GIT LOG FOR DEBUGGING ==="
+                                git log --oneline -10
+                                echo "=== GIT STATUS ==="
+                                git status
+                                echo "=== GIT REMOTE BRANCHES ==="
+                                git branch -r
+                            """
+                            error("Git merge/push operations failed")
+                        }
+                    }
                 }
             }
         }
-    } // ← ЭТА ЗАКРЫВАЮЩАЯ СКОБКА БЫЛА ПРОПУЩЕНА!
+
+        stage('Restart Servers After Merge') {
+            when {
+                branch 'fix'
+                expression { 
+                    currentBuild.result == null || currentBuild.result == 'SUCCESS' 
+                }
+            }
+            steps {
+                bat """
+                    echo "=== RESTARTING SERVERS AFTER MERGE ==="
+                    
+                    echo "Stopping Django server..."
+                    "${PM2_CMD}" delete django || echo "No Django process to stop"
+                    
+                    echo "Starting Django server..."
+                    cd "${TARGET_DIR}"
+                    "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+                    
+                    echo "Stopping Vue server..."
+                    "${PM2_CMD}" delete vue || echo "No Vue process to stop"
+                    
+                    echo "Starting Vue server..."
+                    "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+                    
+                    echo "=== FINAL PM2 STATUS ==="
+                    "${PM2_CMD}" list
+                    
+                    echo "✅ Servers restarted successfully after merge"
+                """
+            }
+        }
+    }
 
     post {
+        always {
+            echo "=== BUILD FINISHED ==="
+            echo "Build Result: ${currentBuild.result}"
+            bat """
+                echo "Final PM2 status:"
+                "${PM2_CMD}" list || echo "PM2 not available"
+            """
+        }
         success {
+            echo "🎉 Pipeline executed successfully!"
             echo "Backend and Frontend are running via PM2!"
             echo "Backend: http://127.0.0.1:8000/"
             echo "Frontend: http://127.0.0.1:5173/"
+            
+            bat """
+                echo "=== ACTIVE SERVERS ==="
+                "${PM2_CMD}" list
+                echo "=== NETSTAT FOR PORTS ==="
+                netstat -an | findstr "8000" || echo "Port 8000 not found"
+                netstat -an | findstr "5173" || echo "Port 5173 not found"
+            """
+        }
+        failure {
+            echo "❌ Pipeline failed!"
+            bat """
+                echo "=== CLEANING UP ON FAILURE ==="
+                "${PM2_CMD}" delete django || echo "No Django process to delete"
+                "${PM2_CMD}" delete vue || echo "No Vue process to delete"
+                "${PM2_CMD}" list
+            """
+        }
+        unstable {
+            echo "⚠️ Pipeline unstable!"
         }
     }
 }
