@@ -63,6 +63,7 @@ pipeline {
         }
 stage('Merge fix into master and sync fix') {
     when {
+        branch 'fix' // Только при пуше в fix ветку
         expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
     }
     steps {
@@ -75,14 +76,14 @@ stage('Merge fix into master and sync fix') {
                 git config user.name "%GIT_USER%"
                 git config user.email "%GIT_EMAIL%"
                 
-                # Обновляем URL для origin
-                git remote set-url origin "https://%GIT_USER%/%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
+                # Правильный URL (исправьте ваш)
+                git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
                 
                 git checkout master
                 git pull --rebase origin master
                 
                 # Сливаем fix в master
-                git merge fix -m "Auto-merge: $(date +%Y-%m-%d)"
+                git merge fix -m "Auto-merge"
                 
                 git push origin master
                 
@@ -90,13 +91,6 @@ stage('Merge fix into master and sync fix') {
                 git checkout fix
                 git merge master -m "Sync with master"
                 git push origin fix
-
-                :: Перезапуск серверов
-                call "${PM2_CMD}" delete django || echo No Django process
-                call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
-
-                call "${PM2_CMD}" delete vue || echo No Vue process
-                call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
             """
         }
     }
