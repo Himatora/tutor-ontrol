@@ -76,7 +76,7 @@ stage('Merge fix into master and sync fi') {
                 git config user.email "%GIT_EMAIL%"
                 
                 # Обновляем URL для origin
-                git remote set-url origin "https://%GIT_USER%/%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
+                git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
                 
                 git checkout master
                 git pull --rebase origin master
