@@ -61,7 +61,7 @@ pipeline {
                  }
             }
         }
-stage('Merge fix into master and sync fix') {
+stage('Merge fix into master and sync fi') {
     when {
         expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
     }
