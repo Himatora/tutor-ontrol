@@ -74,19 +74,19 @@ stage('Merge fix into master and sync fix') {
                         cd "${TARGET_DIR}"
                         git config user.name "%GIT_USER%"
                         git config user.email "%GIT_EMAIL%"
-
+                        
                         git checkout master
-                        git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
-
-                        :: Сливаем fix
-                        git merge fix
-
-                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
-
-                        :: Теперь синхронизируем fix с master (чтобы обе ветки идентичны)
+                        git pull --rebase origin master
+                        
+                        # Сливаем fix в master
+                        git merge fix -m "Auto-merge: $(date +%Y-%m-%d)"
+                        
+                        git push origin master
+                        
+                        # Синхронизируем fix с master (ПРАВИЛЬНЫЙ способ)
                         git checkout fix
-                        git reset --hard master
-                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
+                        git merge master -m "Sync with master"
+                        git push origin fix  # БЕЗ --force!
 
                         :: Перезапуск серверов
                         call "${PM2_CMD}" delete django || echo No Django process
