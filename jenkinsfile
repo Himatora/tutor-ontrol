@@ -62,43 +62,45 @@ pipeline {
             }
         }
 stage('Merge fix into master and sync fix') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
-            steps {
-                withCredentials([
-                    usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
-                    string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
-                ]) {
-                    bat """
-                        cd "${TARGET_DIR}"
-                        git config user.name "%GIT_USER%"
-                        git config user.email "%GIT_EMAIL%"
-                        
-                        git checkout master
-                        git pull --rebase origin master
-                        
-                        # Сливаем fix в master
-                        git merge fix -m "Auto-merge: $(date +%Y-%m-%d)"
-                        
-                        git push origin master
-                        
-                        # Синхронизируем fix с master (ПРАВИЛЬНЫЙ способ)
-                        git checkout fix
-                        git merge master -m "Sync with master"
-                        git push origin fix  # БЕЗ --force!
+    when {
+        expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+    }
+    steps {
+        withCredentials([
+            usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
+            string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
+        ]) {
+            bat """
+                cd "${TARGET_DIR}"
+                git config user.name "%GIT_USER%"
+                git config user.email "%GIT_EMAIL%"
 
-                        :: Перезапуск серверов
-                        call "${PM2_CMD}" delete django || echo No Django process
-                        call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+                # Обновляем URL для origin с использованием токена
+                git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
 
-                        call "${PM2_CMD}" delete vue || echo No Vue process
-                        call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
-                    """
-                }
-            }
+                git checkout master
+                git pull --rebase origin master
+
+                # Сливаем fix в master
+                git merge fix -m "Auto-merge: $(date +%Y-%m-%d)"
+
+                git push origin master
+
+                # Синхронизируем fix с master
+                git checkout fix
+                git merge master -m "Sync with master"
+                git push origin fix
+
+                :: Перезапуск серверов
+                call "${PM2_CMD}" delete django || echo No Django process
+                call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+
+                call "${PM2_CMD}" delete vue || echo No Vue process
+                call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+            """
         }
     }
+}
 
 
     post {
