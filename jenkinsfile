@@ -94,7 +94,7 @@ stage('Merge fix into master and sync fix') {
             """
         }
     }
-
+}
 
     post {
         success {
