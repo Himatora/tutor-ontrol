@@ -62,6 +62,7 @@ pipeline {
             }
         }
 stage('Merge fix into master and sync fix') {
+<<<<<<< HEAD
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
@@ -97,6 +98,38 @@ stage('Merge fix into master and sync fix') {
                     """
                 }
             }
+=======
+    when {
+        branch 'fix' // Только при пуше в fix ветку
+        expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+    }
+    steps {
+        withCredentials([
+            usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
+            string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
+        ]) {
+            bat """
+                cd "${TARGET_DIR}"
+                git config user.name "%GIT_USER%"
+                git config user.email "%GIT_EMAIL%"
+                
+                # Правильный URL (исправьте ваш)
+                git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
+                
+                git checkout master
+                git pull --rebase origin master
+                
+                # Сливаем fix в master
+                git merge fix -m "Auto-merge"
+                
+                git push origin master
+                
+                # Синхронизируем fix с master
+                git checkout fix
+                git merge master -m "Sync with master"
+                git push origin fix
+            """
+>>>>>>> 15ceb4eb10afaf553530f452356dd7cf6864681e
         }
     }
 
