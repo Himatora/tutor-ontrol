@@ -61,73 +61,46 @@ pipeline {
                  }
             }
         }
-        stage('Merge fix into master and sync fix') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
-            steps {
-                withCredentials([
-                    usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
-                    string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
-                ]) {
-                    bat """
-                        :: Очистка локальных изменений и сброс состояния
-                        git reset --hard HEAD
-                        git clean -fd
+stage('Merge fix into master and sync fix') {
+    when {
+        expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+    }
+    steps {
+        withCredentials([
+            usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
+            string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
+        ]) {
+            bat """
+                cd "${TARGET_DIR}"
+                git config user.name "%GIT_USER%"
+                git config user.email "%GIT_EMAIL%"
+                
+                # Обновляем URL для origin
+                git remote set-url origin "https://%GIT_USER%/%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
+                
+                git checkout master
+                git pull --rebase origin master
+                
+                # Сливаем fix в master
+                git merge fix -m "Auto-merge: $(date +%Y-%m-%d)"
+                
+                git push origin master
+                
+                # Синхронизируем fix с master
+                git checkout fix
+                git merge master -m "Sync with master"
+                git push origin fix
 
-                        :: Настройка git
-                        git config user.name "%GIT_USER%"
-                        git config user.email "%GIT_EMAIL%"
+                :: Перезапуск серверов
+                call "${PM2_CMD}" delete django || echo No Django process
+                call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
 
-                        :: Получение всех веток
-                        git fetch --all
-
-                        :: Создание ветки master если её нет
-                        git checkout -B master origin/master 2>nul || git checkout -B master origin/fix
-
-                        :: Обновление master
-                        git pull https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git master
-
-                        :: Переключение на fix и обновление
-                        git checkout fix
-                        git pull https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git fix
-
-                        :: Слияние fix в master
-                        git checkout master
-                        git merge fix
-
-                        :: Пушим в СВОЙ репозиторий (исправьте на ваш)
-                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git master
-
-                        :: Синхронизация fix с master
-                        git checkout fix
-                        git reset --hard master
-                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com:Himatora/tutor-ontrol.git fix
-
-                        :: Перезапуск серверов через ecosystem.config.js
-                        cd "${TARGET_DIR}"
-
-                        :: Останавливаем и удаляем все процессы PM2
-                        call "${PM2_CMD}" delete all || echo No processes to delete
-
-                        :: Запускаем все приложения через конфигурационный файл
-                        call "${PM2_CMD}" start ecosystem.config.js
-
-                        :: Ждем немного для стабилизации процессов
-                        ping -n 5 127.0.0.1 > nul
-
-                        :: Проверяем статус всех процессов
-                        echo Current PM2 status:
-                        call "${PM2_CMD}" list
-
-                        :: Проверяем логи Vue приложения (первые 10 строк)
-                        echo Vue app logs:
-                        call "${PM2_CMD}" logs vue --lines 10 --nostream
-                    """
-                }
-            }
+                call "${PM2_CMD}" delete vue || echo No Vue process
+                call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
+            """
         }
     }
+}
 
     post {
         success {
