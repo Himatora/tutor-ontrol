@@ -101,7 +101,7 @@ stage('Merge fix into master and sync fix') {
         }
     }
 }
-
+}
     post {
         success {
             echo "Backend and Frontend are running via PM2!"
