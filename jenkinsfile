@@ -61,7 +61,8 @@ pipeline {
                  }
             }
         }
-stage('Merge fix into master and sync fi') {
+
+        stage('Merge fix into master and sync fix') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
@@ -74,19 +75,22 @@ stage('Merge fix into master and sync fi') {
                         cd "${TARGET_DIR}"
                         git config user.name "%GIT_USER%"
                         git config user.email "%GIT_EMAIL%"
-
+                        
+                        # Обновляем URL для origin с ПРАВИЛЬНЫМ форматом
+                        git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
+                        
                         git checkout master
-                        git pull --rebase https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
-
-                        :: Сливаем fix
-                        git merge fix
-
-                        git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
-
-                        :: Теперь синхронизируем fix с master (чтобы обе ветки идентичны)
+                        git pull --rebase origin master
+                        
+                        # Сливаем fix в master (без проблемного $)
+                        git merge fix -m "Auto-merge"
+                        
+                        git push origin master
+                        
+                        # Синхронизируем fix с master
                         git checkout fix
-                        git reset --hard master
-                        git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
+                        git merge master -m "Sync with master"
+                        git push origin fix
 
                         :: Перезапуск серверов
                         call "${PM2_CMD}" delete django || echo No Django process
@@ -100,12 +104,11 @@ stage('Merge fix into master and sync fi') {
         }
     }
 
-
     post {
         success {
             echo "Backend and Frontend are running via PM2!"
             echo "Backend: http://127.0.0.1:8000/"
-echo "Frontend: http://127.0.0.1:5173/"
+            echo "Frontend: http://127.0.0.1:5173/"
         }
     }
 }
