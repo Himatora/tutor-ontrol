@@ -72,20 +72,20 @@ stage('Merge fix into master and sync fix') {
         ]) {
             bat """
                 cd "${TARGET_DIR}"
+
                 git config user.name "%GIT_USER%"
                 git config user.email "%GIT_EMAIL%"
-                
-                # Обновляем URL для origin
-                git remote set-url origin "https://%GIT_USER%/%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
-                
+
+                git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
+
                 git checkout master
-                git pull --rebase origin master
-                
-                # Сливаем fix в master
-                git merge fix -m "Auto-merge: $(date +%Y-%m-%d)"
-                
+                git pull origin master
+
+                # Сливаем fix в master (исправлено - убраны $)
+                git merge fix -m "Auto-merge"
+
                 git push origin master
-                
+
                 # Синхронизируем fix с master
                 git checkout fix
                 git merge master -m "Sync with master"
@@ -101,7 +101,6 @@ stage('Merge fix into master and sync fix') {
         }
     }
 }
-
     post {
         success {
             echo "Backend and Frontend are running via PM2!"
