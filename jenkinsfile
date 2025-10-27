@@ -106,7 +106,7 @@ pipeline {
                         ]) {
                             bat """
                                 :: *** ПРЕДВАРИТЕЛЬНАЯ НАСТРОЙКА GIT ***
-                                git config --global --add safe.directory "C:\Users\User\Desktop\jenkins\tutor-ontrol_server"
+                                git config --global --add safe.directory "C:/Users/User/Desktop/jenkins/tutor-ontrol_server"
                                 
                                 git config user.name "%GIT_USER%"
                                 git config user.email "%GIT_EMAIL%"
