@@ -13,27 +13,6 @@ pipeline {
         githubPush() 
     }
     stages {
-        stage('Check Branch') {
-            steps {
-                script {
-                    // Правильное получение имени ветки для Windows
-                    def BRANCH_OUTPUT = bat(
-                        script: '@echo off && git branch --show-current',
-                        returnStdout: true
-                    ).trim()
-                    
-                    // Извлекаем только имя ветки из вывода
-                    def BRANCH_NAME = BRANCH_OUTPUT.split('\n').last().trim()
-                    env.GIT_BRANCH = BRANCH_NAME
-                    echo "Building branch: ${BRANCH_NAME}"
-                    
-                    if (!BRANCH_NAME.contains('fix')) {
-                        currentBuild.result = 'ABORTED'
-                        error("Skipping build for branch: ${BRANCH_NAME}. Only 'fix' branch is allowed.")
-                    }
-                }
-            }
-        }
         stage('Clean Workspace and Setup') {
             steps {
                 bat """
