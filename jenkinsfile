@@ -16,15 +16,15 @@ pipeline {
             stage('Check Branch') {
                 steps {
                     script {
-                        // Определяем текущую ветку
-                        def BRANCH_NAME = sh(
-                            script: 'git rev-parse --abbrev-ref HEAD',
+                        // Для Windows используем bat и команды Git для CMD
+                        def BRANCH_NAME = bat(
+                            script: 'git branch --show-current',
                             returnStdout: true
                         ).trim()
                         
                         env.GIT_BRANCH = BRANCH_NAME
+                        echo "Building branch: ${BRANCH_NAME}"
                         
-                        // Пропускаем выполнение, если это не ветка fix
                         if (!BRANCH_NAME.contains('fix')) {
                             currentBuild.result = 'ABORTED'
                             error("Skipping build for branch: ${BRANCH_NAME}. Only 'fix' branch is allowed.")
