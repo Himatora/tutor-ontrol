@@ -12,8 +12,26 @@ pipeline {
     triggers { 
         githubPush() 
     }
-
     stages {
+            stage('Check Branch') {
+                steps {
+                    script {
+                        // Определяем текущую ветку
+                        def BRANCH_NAME = sh(
+                            script: 'git rev-parse --abbrev-ref HEAD',
+                            returnStdout: true
+                        ).trim()
+                        
+                        env.GIT_BRANCH = BRANCH_NAME
+                        
+                        // Пропускаем выполнение, если это не ветка fix
+                        if (!BRANCH_NAME.contains('fix')) {
+                            currentBuild.result = 'ABORTED'
+                            error("Skipping build for branch: ${BRANCH_NAME}. Only 'fix' branch is allowed.")
+                        }
+                    }
+                }
+            }
         stage('Clean Workspace and Setup') {
             steps {
                 bat """
