@@ -93,181 +93,75 @@ pipeline {
             }
         }
 
-        stage('Check Branch and Merge') {
+         stage('Merge fix into master and deploy') {
+            when { 
+                expression { env.BRANCH_NAME?.contains('fix') || env.GIT_BRANCH?.contains('fix') } 
+            }
             steps {
                 script {
-                    // Определяем текущую ветку вручную
-                    def CURRENT_BRANCH = bat(
-                        script: '@cd "' + TARGET_DIR + '" && git branch --show-current',
-                        returnStdout: true
-                    ).trim()
-                    
-                    echo "Current branch detected: ${CURRENT_BRANCH}"
-                    echo "Build result: ${currentBuild.result}"
-                    
-                    // Проверяем условия для мержа
-                    if (CURRENT_BRANCH == 'fix' && (currentBuild.result == null || currentBuild.result == 'SUCCESS')) {
-                        echo "✅ Conditions met for merge: branch=fix, build=success"
-                        // Запускаем мерж как отдельный stage
-                        build job: env.JOB_NAME, parameters: [
-                            booleanParam(name: 'RUN_MERGE', value: true)
-                        ], wait: false
-                    } else {
-                        echo "❌ Skip merge - conditions not met: branch=${CURRENT_BRANCH}, build=${currentBuild.result}"
-                    }
-                }
-            }
-        }
-
-        stage('Merge fix into master') {
-            when {
-                expression { 
-                    params.RUN_MERGE == true 
-                }
-            }
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'github-creds', 
-                        usernameVariable: 'GIT_USER', 
-                        passwordVariable: 'GIT_TOKEN'
-                    ),
-                    string(
-                        credentialsId: 'github-email', 
-                        variable: 'GIT_EMAIL'
-                    )
-                ]) {
-                    script {
-                        try {
-                            echo "=== STARTING MERGE OPERATIONS ==="
-                            
+                    if (currentBuild.result == null || currentBuild.result == 'SUCCESS') {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN'),
+                            string(credentialsId: 'github-email', variable: 'GIT_EMAIL')
+                        ]) {
                             bat """
-                                cd "${TARGET_DIR}"
+                                :: *** ПРЕДВАРИТЕЛЬНАЯ НАСТРОЙКА GIT ***
+                                git config --global --add safe.directory "C:\Users\User\Desktop\jenkins\tutor-ontrol_server"
                                 
-                                echo "=== GIT CONFIGURATION ==="
                                 git config user.name "%GIT_USER%"
                                 git config user.email "%GIT_EMAIL%"
+
+                                :: *** 1. GIT-ОПЕРАЦИИ В JENKINS WORKSPACE (СЛИЯНИЕ И PUSH НА GITHUB) ***
                                 
-                                echo "=== CURRENT BRANCH INFO ==="
-                                git branch -a
-                                git status
-                                git remote -v
-                                
-                                echo "=== SETTING UP REMOTE URL WITH CREDENTIALS ==="
-                                git remote set-url origin "https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git"
-                                
-                                echo "=== FETCHING LATEST CHANGES ==="
-                                git fetch --all
-                                git pull origin fix
-                                
-                                echo "=== SWITCHING TO MASTER ==="
                                 git checkout master
-                                
-                                echo "=== PULLING MASTER ==="
-                                git pull origin master
-                                
-                                echo "=== MERGING FIX INTO MASTER ==="
-                                git merge fix -m "Auto-merge from Jenkins build ${BUILD_NUMBER}"
-                                
-                                echo "=== PUSHING MASTER ==="
-                                git push origin master
-                                
-                                echo "✅ Successfully merged fix into master"
-                                
-                                echo "=== SYNCING FIX BRANCH ==="
+                                git pull https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+                                git merge origin/fix --no-ff
+                                git push https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master
+
                                 git checkout fix
-                                git merge master -m "Sync fix with master after build ${BUILD_NUMBER}"
-                                git push origin fix
+                                git reset --hard master
+                                git push --force https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git fix
+
+                                :: *** 2. РАЗВЕРТЫВАНИЕ И ОБНОВЛЕНИЕ КОДА В TARGET_DIR ***
                                 
-                                echo "✅ Successfully synced fix with master"
+                                cd "${TARGET_DIR}"
                                 
-                                echo "=== FINAL BRANCH STATUS ==="
-                                git branch -v
-                                git log --oneline -5
+                                :: Инициализация Git в целевой папке, если она еще не репозиторий
+                                if not exist .git (
+                                    git init
+                                    git remote add origin https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git
+                                )
+
+                                :: 🎯 ИСПРАВЛЕНИЕ #2: Скачиваем самый свежий код из обновленной master и обновляем сервер!
+                                git fetch
+                                git checkout master
+                                git pull https://%GIT_USER%:%GIT_TOKEN%@github.com/Himatora/tutor-ontrol.git master 
+
+                                :: *** 3. PM2-ОПЕРАЦИИ (ПЕРЕЗАПУСК) ***
+                                
+                                :: Перезапуск Django
+                                call "${PM2_CMD}" delete django || echo No Django process
+                                call "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
+
+                                :: Перезапуск Vue
+                                cd "${TARGET_DIR}\\client"
+                                call "${PM2_CMD}" delete vue || echo No Vue process
+                                call "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
                             """
-                        } catch (Exception e) {
-                            echo "❌ Git operations failed: ${e.message}"
-                            bat """
-                                echo "=== GIT LOG FOR DEBUGGING ==="
-                                git log --oneline -10
-                                echo "=== GIT STATUS ==="
-                                git status
-                                echo "=== GIT REMOTE BRANCHES ==="
-                                git branch -r
-                            """
-                            error("Git merge/push operations failed")
                         }
+                    } else {
+                        echo "Tests failed. Skipping merge and deployment."
                     }
                 }
-            }
-        }
-
-        stage('Restart Servers After Merge') {
-            when {
-                expression { 
-                    params.RUN_MERGE == true 
-                }
-            }
-            steps {
-                bat """
-                    echo "=== RESTARTING SERVERS AFTER MERGE ==="
-                    
-                    echo "Stopping Django server..."
-                    "${PM2_CMD}" delete django || echo "No Django process to stop"
-                    
-                    echo "Starting Django server..."
-                    cd "${TARGET_DIR}"
-                    "${PM2_CMD}" start "${PYTHON_EXE}" --name django -- manage.py runserver 127.0.0.1:8000
-                    
-                    echo "Stopping Vue server..."
-                    "${PM2_CMD}" delete vue || echo "No Vue process to stop"
-                    
-                    echo "Starting Vue server..."
-                    "${PM2_CMD}" start "${CMD}" --name vue -- /c "cd ${TARGET_DIR}\\client && npm run dev"
-                    
-                    echo "=== FINAL PM2 STATUS ==="
-                    "${PM2_CMD}" list
-                    
-                    echo "✅ Servers restarted successfully after merge"
-                """
             }
         }
     }
-
+    
     post {
-        always {
-            echo "=== BUILD FINISHED ==="
-            echo "Build Result: ${currentBuild.result}"
-            bat """
-                echo "Final PM2 status:"
-                "${PM2_CMD}" list || echo "PM2 not available"
-            """
-        }
         success {
-            echo "🎉 Pipeline executed successfully!"
-            echo "Backend and Frontend are running via PM2!"
+            echo "Deployment successful. Backend and Frontend are running via PM2 with the latest code!"
             echo "Backend: http://127.0.0.1:8000/"
             echo "Frontend: http://127.0.0.1:5173/"
-            
-            bat """
-                echo "=== ACTIVE SERVERS ==="
-                "${PM2_CMD}" list
-                echo "=== NETSTAT FOR PORTS ==="
-                netstat -an | findstr "8000" || echo "Port 8000 not found"
-                netstat -an | findstr "5173" || echo "Port 5173 not found"
-            """
-        }
-        failure {
-            echo "❌ Pipeline failed!"
-            bat """
-                echo "=== CLEANING UP ON FAILURE ==="
-                "${PM2_CMD}" delete django || echo "No Django process to delete"
-                "${PM2_CMD}" delete vue || echo "No Vue process to delete"
-                "${PM2_CMD}" list
-            """
-        }
-        unstable {
-            echo "⚠️ Pipeline unstable!"
         }
     }
 }
